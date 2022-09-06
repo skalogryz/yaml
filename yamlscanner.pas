@@ -327,9 +327,10 @@ begin
         text := StrTo(buf, idx, LineBreaks);
       end;
       #13,#10: begin
-        SkipWhile(buf, idx, LineBreaks);
+        text := StrOneEoln(buf, idx);
         Result := ytkEoln;
         isNewLine := true;
+        Exit;
       end;
       '-': begin Result := ytkSequence; inc(idx); end;
       ':': begin Result := ytkMapValue; inc(idx); end;

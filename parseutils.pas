@@ -27,6 +27,10 @@ function ScanIdent(const s: string; var idx: integer; const InitChars, OtherChar
 
 function SafeChar(const s: string; idx: integer; const defChar: char = #0): char; {$ifdef hasline}inline;{$endif}
 
+// skipping exactly one line break. Meaning #10#13 or #13#10 or #10 or #13
+procedure SkipOneEoln(const s: string; var idx: integer);
+function StrOneEoln(const s: string; var idx: integer): string;
+
 implementation
 
 function SafeChar(const s: string; idx: integer; const defChar: char = #0): char;
@@ -74,6 +78,25 @@ begin
   j := idx;
   inc(idx);
   SkipWhile(s, idx, OtherChars);
+  Result := Copy(s, j, idx-j);
+end;
+
+procedure SkipOneEoln(const s: string; var idx: integer);
+begin
+  if (idx<0) or (idx>length(s)) then Exit;
+  if s[idx] in LineBreaks then begin
+    inc(idx);
+    if (idx<=length(s)) and (s[idx] in LineBreaks) and (s[idx]<>s[idx-1]) then
+      inc(idx);
+  end;
+end;
+
+function StrOneEoln(const s: string; var idx: integer): string;
+var
+  j : integer;
+begin
+  j := idx;
+  SkipOneEoln(s, idx);
   Result := Copy(s, j, idx-j);
 end;
 
