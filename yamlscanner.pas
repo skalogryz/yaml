@@ -43,6 +43,7 @@ type
   TYamlScanner = class(TObject)
   private
     isNewLine: Boolean;
+    function DoScanNext: TYamlToken;
   public
     idx           : Integer;
     buf           : string;
@@ -50,6 +51,7 @@ type
     identQuotes   : integer;
     tabsSpaceMod  : Integer; // tabs to space modifier
     text          : string;
+    token         : TYamlToken;
     blockCount    : integer; 
     constructor Create;
     procedure SetBuffer(const abuf: string);
@@ -281,7 +283,7 @@ begin
   Result := length(s) + tb * tabsSpaceMod;
 end;
 
-function TYamlScanner.ScanNext: TYamlToken;
+function TYamlScanner.DoScanNext: TYamlToken;
 var
   s : string;
 begin
@@ -354,6 +356,12 @@ begin
     end;
   end;
   SkipWhile(buf, idx, WhiteSpaceChars);
+end;
+
+function TYamlScanner.ScanNext: TYamlToken;
+begin
+  token := DoScanNext;
+  Result := token;
 end;
 
 function TYamlScanner.GetValue: string;
