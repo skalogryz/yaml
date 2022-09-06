@@ -54,6 +54,7 @@ type
     constructor Create;
     procedure SetBuffer(const abuf: string);
     function ScanNext: TYamlToken;
+    function GetValue: string;
   end;
 
 const
@@ -129,6 +130,10 @@ const
   YamlTagChar = YamlURI - ['!',',','[',']','{','}'];
 
 function IsPlainFirst(const buf: string; idx: integeR): Boolean; {$ifdef hasline}inline;{$endif}
+
+function GetTextToValue(const text: string): string;
+function SQuoteToValue(const text: string): string;
+function DQuoteToValue(const text: string): string;
 
 implementation
 
@@ -348,6 +353,109 @@ begin
     end;
   end;
   SkipWhile(buf, idx, WhiteSpaceChars);
+end;
+
+function TYamlScanner.GetValue: string;
+begin
+  Result := GetTextToValue(text);
+end;
+
+function SQuoteToValue(const text: string): string;
+var
+  i : integer;
+  j : integer;
+  ln : integer;
+begin
+  if (text ='') or (text[1]<>#39) then begin
+    Result:=text;
+    exit;
+  end;
+  Result := '';
+  j:=2;
+  ln := length(text)-1;
+  i:=2;
+  while i<=ln do begin
+    if text[i]=#39 then begin
+      Result := Result+Copy(text, j, i-j);
+      j:=i+1;
+      inc(i, 2);
+    end else
+      inc(i);
+  end;
+  if j = 2 then Result := Copy(text, 2, length(text)-2)
+  else Result := Result+Copy(text, j, length(text)-j);
+end;
+
+function CodeToStr(ch: Char; const code: string): string;
+begin
+  //todo:
+  Result := '';
+end;
+
+function DQuoteToValue(const text: string): string;
+var
+  i : integer;
+  j : integer;
+  ln : integer;
+  ch : char;
+  cd : string;
+begin
+  Result := '';
+  if text ='' then Exit;
+  if (text[1]<>'"') then begin
+    Result := text;
+    Exit;
+  end;
+  i := 2;
+  j := 2;
+  ln := length(text);
+  while i<ln do begin
+    if text[i] = '\' then begin
+      Result := Result + Copy(text, j, i-j);
+      inc(i);
+      if i>=ln then begin
+        j := i+2;
+        Break;
+      end;
+      ch := text[i];
+      inc(i);
+      case ch of
+        '0': Result := Result+#0;
+        'a': Result := Result+#7;
+        'b': Result := Result+#8;
+        't': Result := Result+#9;
+        'n': Result := Result+#10;
+        'v': Result := Result+#11;
+        'f': Result := Result+#12;
+        'r': Result := Result+#13;
+        'e': Result := Result+#27;
+        '"': Result := Result+'"';
+        '/': Result := Result+'/';
+        '\': Result := Result+'\';
+        'N': Result := Result+#$85;
+        '_': Result := Result+#$A0;
+        'L': Result := Result+#$E2#$80#$A8;
+        'P': Result := Result+#$E2#$80#$A9;
+        'x','u','U': begin
+          cd := StrWhile(text, i, YamlHexDig);
+          Result := Result+CodeToStr(ch, cd);
+        end;
+      else
+        Result := Result+ch;
+      end;
+      j := i;
+    end else
+      inc(i);
+  end;
+  Result := Result + Copy(text, j, length(text)-j);
+end;
+
+function GetTextToValue(const text: string): string;
+begin
+  if text = '' then Result := text
+  else if text[1]=#39 then Result := SQuoteToValue(text)
+  else if text[1]='"' then Result := DQuoteToValue(text)
+  else Result := text;
 end;
 
 end.
