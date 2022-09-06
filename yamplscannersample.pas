@@ -29,7 +29,9 @@ begin
         writeln('error');
         break;
       end;
-      writeln(sc.tokenIdent:8,YamlTokenStr[tk]:10,' ', sc.text);
+      write(sc.tokenIdent:8,YamlTokenStr[tk]:10,' ');
+      if tk <> ytkEoln then write(sc.text);
+      writeln;
     end;
   finally
     fs.Free;
