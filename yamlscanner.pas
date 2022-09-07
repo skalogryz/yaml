@@ -38,16 +38,17 @@ type
    ,ytkEndOfDoc
   );
 
+type
   { TYamlScanner }
 
   TYamlScanner = class(TObject)
-  private
-    isNewLine: Boolean;
     function DoScanNext: TYamlToken;
   public
+    newLineOfs    : Integer;
+    isNewLine     : Boolean;
     idx           : Integer;
     buf           : string;
-    tokenIdent    : Integer;
+    tokenIndent   : Integer;
     identQuotes   : integer;
     tabsSpaceMod  : Integer; // tabs to space modifier
     text          : string;
@@ -130,6 +131,8 @@ const
                 ,'+' ,'$' ,',' ,'_' ,'.' ,'!' ,'~'
                 ,'*' ,#39 ,'(' ,')' ,'[' ,']'];
   YamlTagChar = YamlURI - ['!',',','[',']','{','}'];
+
+  YamlTagChars = ['!']+ YamlAlpha  + YamlDecDig +['-','<','>'];
 
 function IsPlainFirst(const buf: string; idx: integeR): Boolean; {$ifdef hasline}inline;{$endif}
 
@@ -267,6 +270,7 @@ begin
   buf := abuf;
   idx := 1;
   isNewLine := true;
+  newLineOfs := 1;
 end;
 
 function StrToIdent(const s: string; tabsSpaceMod: integer): integer;
@@ -295,9 +299,10 @@ begin
   end;
 
   if isNewLine then begin
+    newLineOfs := idx;
     isNewLine := false;
     s := StrWhile(buf, idx, WhiteSpaceChars);
-    tokenIdent := StrToIdent(s, tabsSpaceMod);
+    tokenIndent := StrToIdent(s, tabsSpaceMod);
     if (idx>length(buf)) then begin
       Result := ytkEof;
       Exit;
@@ -321,6 +326,7 @@ begin
     text := ScanSingleQuote(buf, idx);
     Result := ytkIdent;
   end else begin
+    tokenIndent := idx - newLineOfs;
     case buf[idx] of
       '#': begin
         Result := ytkComment;
@@ -343,7 +349,10 @@ begin
       '}': begin Result := ytkMapClose; inc(idx); dec(blockCount); end;
       '&': begin Result := ytkAnchor; inc(idx); end;
       '*': begin Result := ytkAlias; inc(idx); end;
-      '!': begin Result := ytkNodeTag; inc(idx); end;
+      '!': begin
+         Result := ytkNodeTag;
+         text := StrWhile(buf, idx, YamlTagChars);
+      end;
       '|': begin Result := ytkLiteral; inc(idx); end;
       '>': begin Result := ytkFolded; inc(idx); end;
       '%': begin
