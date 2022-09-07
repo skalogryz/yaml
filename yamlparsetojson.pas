@@ -106,6 +106,10 @@ begin
 
     tk := sc.ScanNext;
   end;
+
+  if not Assigned(Result) and hasKey then begin
+    Result := TJSONString.Create(key);
+  end;
 end;
 
 function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
