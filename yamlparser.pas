@@ -28,7 +28,35 @@ function ParseAnchor(sc: TYamlScanner; out anch: string): Boolean;
 procedure ParseTagAnchor(sc: TYamlScanner; out tag, anch: string);
 
 type
-  EYamlParserError = class(Exception);
+
+  { EYamlParserError }
+
+  EYamlParserError = class(Exception)
+  public
+    lineNum  : integer;
+    charOfs  : integer;
+    ascanner : TYamlScanner;
+    constructor Create(const msg: string);
+    constructor Create(sc: TYamlScanner; const msg: string);
+  end;
+
+  { EYamlExpected }
+
+  EYamlExpected = class(EYamlParserError)
+  public
+    constructor Create(sc: TYamlScanner; const msg: string); overload;
+    constructor Create(sc: TYamlScanner; const want: TYamlToken); overload;
+    constructor Create(sc: TYamlScanner; const want, need: TYamlToken); overload;
+  end;
+
+  { EYamlInvalidToken }
+
+  EYamlInvalidToken = class(EYamlParserError)
+  public
+    constructor Create(sc: TYamlScanner;const msg: string); overload;
+    constructor Create(sc: TYamlScanner; const unexpect: TYamlToken); overload;
+    constructor Create(sc: TYamlScanner);
+  end;
 
 procedure SkipToNewline(sc: TYamlScanner);
 
@@ -93,6 +121,57 @@ function SkipCommentsEoln(sc: TYamlScanner): string;
 begin
   while sc.token in [ytkComment,ytkEoln] do
     sc.ScanNext;
+end;
+
+{ EYamlParserError }
+
+constructor EYamlParserError.Create(const msg: string);
+begin
+  inherited Create(msg);
+end;
+
+constructor EYamlParserError.Create(sc: TYamlScanner; const msg: string);
+begin
+  Create(msg);
+  if Assigned(sc) then begin
+    ascanner := sc;
+    lineNum := sc.lineNum;
+    charOfs := sc.tokenIdx-sc.newLineOfs+1;
+  end;
+end;
+
+{ EYamlInvalidToken }
+
+constructor EYamlInvalidToken.Create(sc: TYamlScanner; const msg: string);
+begin
+  inherited Create(sc, msg);
+end;
+
+constructor EYamlInvalidToken.Create(sc: TYamlScanner; const unexpect: TYamlToken);
+begin
+  Create(sc, 'Unexpected '+YamlTokenStr[unexpect]+' found');
+end;
+
+constructor EYamlInvalidToken.Create(sc: TYamlScanner);
+begin
+  Create(sc, sc.Token);
+end;
+
+{ EYamlExpected }
+
+constructor EYamlExpected.Create(sc: TYamlScanner; const msg: string);
+begin
+  inherited Create(sc, msg);
+end;
+
+constructor EYamlExpected.Create(sc: TYamlScanner; const want: TYamlToken);
+begin
+  Create(sc, 'expected: ' + YamlTokenStr[want]);
+end;
+
+constructor EYamlExpected.Create(sc: TYamlScanner; const want, need: TYamlToken);
+begin
+  Create(sc, 'expected: ' + YamlTokenStr[want]+', but '+YamlTokenStr[need]+' found');
 end;
 
 end.
