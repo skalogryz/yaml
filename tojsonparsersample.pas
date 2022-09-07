@@ -52,7 +52,6 @@ begin
     writeln('please specify yaml file name');
     exit;
   end;
-
   ToJson(ParamStr(1));
 end.
 

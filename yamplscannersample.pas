@@ -29,7 +29,7 @@ begin
         writeln('error');
         break;
       end;
-      write(sc.tokenIdent:8,YamlTokenStr[tk]:10,' ');
+      write(sc.tokenIndent:8,YamlTokenStr[tk]:10,' ');
       if tk <> ytkEoln then write(sc.text);
       writeln;
     end;
