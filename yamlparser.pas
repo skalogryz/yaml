@@ -127,19 +127,20 @@ type
 
   TYamlParser = class(TObject)
   protected
+    fscanner   : TYamlScanner;
     fState     : TParseState;
     hasDoc     : Boolean;
     ctx        : TParserContext;
     root       : TParserContext;
+    procedure InitParser;
     function DoParseNext: Boolean;
     procedure ResetContext;
     function PopupContext: TYamlEntry;
 
-    procedure SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean);
+    procedure SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean; indent: integer = -1);
 
     procedure ConsumeDirective(const dir: string); virtual;
   public
-    scanner    : TYamlScanner;
     ownScanner : Boolean;
 
     tag        : string;
@@ -154,9 +155,11 @@ type
     constructor Create;
     destructor Destroy; override;
     procedure SetBuffer(const buf: string);
+    procedure SetScanner(ascanner: TYamlScanner; aownScanner: Boolean);
 
     function ParseNext: Boolean;
     property ParserState: TParseState read fState;
+    property Scanner: TYamlScanner read fScanner;
   end;
 
 implementation
@@ -237,17 +240,18 @@ end;
 procedure TYamlParser.SetBuffer(const buf: string);
 begin
   if not Assigned(scanner) then begin
-    scanner := TYamlScanner.Create;
+    fscanner := TYamlScanner.Create;
     ownScanner := true;
   end;
-  fState := psInit;
   scanner.SetBuffer(buf);
-  scanner.ScanNext;
-  errorMsg   := '';
-  errorLine  := 0;
-  errorChar  := 0;
-  hasDoc := false;
-  ResetContext;
+  InitParser;
+end;
+
+procedure TYamlParser.SetScanner(ascanner: TYamlScanner; aownScanner: Boolean);
+begin
+  fscanner := ascanner;
+  ownScanner := aownScanner;
+  InitParser;
 end;
 
 function TYamlParser.ParseNext: Boolean;
@@ -323,6 +327,7 @@ begin
         end else if scanner.token = ytkIdent then begin
           scalar := ParseKeyScalar(scanner);
           if scanner.token = ytkColon then begin
+            SwitchContext(false, false, isNew);
             entry := yeKeyMapStart;
             fState := psReportKey;
             Result := true;
@@ -476,13 +481,16 @@ begin
   t.Free;
 end;
 
-procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean);
+procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean; indent: integer = -1);
 var
   n : TParserContext;
   id : integer;
 begin
   isNewContext := false;
-  id := scanner.tokenIndent;
+  if indent < 0 then
+    id := scanner.tokenIndent
+  else
+    id := indent;
   isNewContext := (not ctx.isStarted)
     or ((ctx.isStarted) and ((ctx.isArray <> isArray) or (ctx.indent <> id)));
 
@@ -502,6 +510,19 @@ end;
 procedure TYamlParser.ConsumeDirective(const dir: string);
 begin
 
+end;
+
+procedure TYamlParser.InitParser;
+begin
+  fState := psInit;
+  errorMsg   := '';
+  errorLine  := 0;
+  errorChar  := 0;
+  errorState := psInit;
+  ResetContext;
+  hasDoc := false;
+
+  scanner.ScanNext;
 end;
 
 { EYamlParserError }
