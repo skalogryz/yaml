@@ -113,6 +113,7 @@ const
   s_tab   = #9;
   s_white = [s_space, s_tab];
   ns_char = nb_char - s_white;
+  ns_anchor_name = ns_char - c_flow_indicator;
 
   YamlDecDig = ['0'..'9'];
   YamlHexDig = ['0'..'9','a'..'f','A'..'F'];
@@ -347,11 +348,15 @@ begin
       ']': begin Result := ytkBlockClose; inc(idx); dec(blockCount); end;
       '{': begin Result := ytkMapStart; inc(idx); inc(blockCount); end;
       '}': begin Result := ytkMapClose; inc(idx); dec(blockCount); end;
-      '&': begin Result := ytkAnchor; inc(idx); end;
+      '&': begin
+        Result := ytkAnchor;
+        inc(idx);
+        text := StrWhile(buf, idx, ns_anchor_name);
+      end;
       '*': begin Result := ytkAlias; inc(idx); end;
       '!': begin
-         Result := ytkNodeTag;
-         text := StrWhile(buf, idx, YamlTagChars);
+        Result := ytkNodeTag;
+        text := StrWhile(buf, idx, YamlTagChars);
       end;
       '|': begin Result := ytkLiteral; inc(idx); end;
       '>': begin Result := ytkFolded; inc(idx); end;
