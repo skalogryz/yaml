@@ -15,6 +15,7 @@ type
     ytkEof
    ,ytkError
    ,ytkSequence
+   ,ytkMapKey
    ,ytkMapValue
    ,ytkSeparator
    ,ytkBlockOpen
@@ -68,6 +69,7 @@ const
     '<eof>'
    ,'<error>'
    ,'-'
+   ,'?'
    ,':'
    ,','
    ,'['
@@ -348,6 +350,7 @@ begin
         Exit;
       end;
       '-': begin Result := ytkSequence; inc(idx); end;
+      '?': begin Result := ytkMapKey; inc(idx); end;
       ':': begin Result := ytkMapValue; inc(idx); end;
       ',': begin Result := ytkSeparator; inc(idx); end;
       '[': begin Result := ytkBlockOpen; inc(idx); inc(blockCount); end;
