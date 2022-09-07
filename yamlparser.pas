@@ -7,11 +7,17 @@ uses
 
 const
   ytkComma = ytkSeparator;
+  ytkColon = ytkMapValue;
   ytkDash = ytkSequence;
   ytkBracketOpen = ytkBlockOpen;
   ytkBracketClose = ytkBlockClose;
+  ytkCurlyOpen = ytkMapStart;
+  ytkCurlyClose = ytkMapClose;
 
   ytkEndOfScan = [ytkEof, ytkEndOfDoc];
+
+type
+  TSetOfYamlTokens = set of TYamlToken;
 
 // Parsing functions don't check if scanner is non nil.
 // Make sure to do the check first
@@ -25,6 +31,10 @@ type
   EYamlParserError = class(Exception);
 
 procedure SkipToNewline(sc: TYamlScanner);
+
+function ParseKeyScalar(sc: TYamlScanner): string;
+function SkipComments(sc: TYamlScanner): string;
+function SkipCommentsEoln(sc: TYamlScanner): string;
 
 implementation
 
@@ -62,6 +72,27 @@ function ParseAnchor(sc: TYamlScanner; out anch: string): Boolean;
 begin
   anch := '';
   Result := false;
+end;
+
+function ParseKeyScalar(sc: TYamlScanner): string;
+begin
+  Result := '';
+  if sc.token = ytkIdent then begin
+    Result := sc.GetValue;
+    sc.ScanNext;
+  end else
+    Result := '';
+end;
+
+function SkipComments(sc: TYamlScanner): string;
+begin
+  if sc.token = ytkComment then sc.ScanNext;
+end;
+
+function SkipCommentsEoln(sc: TYamlScanner): string;
+begin
+  while sc.token in [ytkComment,ytkEoln] do
+    sc.ScanNext;
 end;
 
 end.

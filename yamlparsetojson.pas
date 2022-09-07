@@ -25,6 +25,64 @@ begin
   else Result := TJSONString.Create('');
 end;
 
+
+// parsing { key:value, ... } flow
+procedure ParseKeyValueBlock(sc: TYamlScanner; const opts: TYamlToJsonOptions; dst: TJSONOBject); forward;
+procedure ParseToArray(sc: TYamlScanner; const opts: TYamlToJsonOptions; dst: TJSONArray; stayIdent: integer); forward;
+// tries to parse a value buy current status of the scanner
+function ParseToJsonInt(sc: TYamlScanner; const opts: TYamlToJsonOptions; indent: integer; const ExtraStops: TSetOfYamlTokens = []): TJSONData; forward;
+
+// This is an explicit Key/Value block. Expecting "}" to be reported
+procedure ParseKeyValueBlock(sc: TYamlScanner; const opts: TYamlToJsonOptions; dst: TJSONOBject);
+var
+  done : Boolean;
+  key  : string;
+  vl   : TJSONData;
+  suba : TJSONArray;
+begin
+  if sc.token <> ytkCurlyOpen then Exit;
+  sc.ScanNext;
+
+  done := false;
+  while not done do begin
+    SkipCommentsEoln(sc);
+    key := ParseKeyScalar(sc);
+    SkipCommentsEoln(sc);
+    vl := nil;
+    if sc.token = ytkColon then begin
+      sc.ScanNext;
+      SkipCommentsEoln(sc);
+    end;
+
+    case sc.token of
+      ytkCurlyClose: begin
+        sc.ScanNext;
+        done := true;
+      end;
+      ytkComma: begin
+        sc.ScanNext;
+        SkipCommentsEoln(sc);
+        // the last comma after the last value is allowed
+        // { k:v, k2:v, }
+        if (sc.token = ytkCurlyClose) then begin
+          sc.ScanNext;
+          done := true;
+        end;
+      end;
+      ytkBracketOpen:  begin
+        suba := TJSONArray.Create();
+        ParseToArray(sc, opts, suba, sc.tokenIndent);
+        vl := suba;
+      end;
+    else
+      vl := ParseToJsonInt(sc, opts, sc.tokenIndent, [ytkCurlyClose, ytkComma]);
+    end;
+    if vl = nil then
+      vl := TJSONNull.Create;
+    dst.Add(key, vl);
+  end;
+end;
+
 // sc is at "sequence" and everyone else here are expected to be sequences
 procedure ParseToArray(sc: TYamlScanner; const opts: TYamlToJsonOptions; dst: TJSONArray; stayIdent: integer);
 var
@@ -65,7 +123,7 @@ begin
   end;
 end;
 
-function ParseToJsonInt(sc: TYamlScanner; const opts: TYamlToJsonOptions; indent: integer): TJSONData;
+function ParseToJsonInt(sc: TYamlScanner; const opts: TYamlToJsonOptions; indent: integer; const ExtraStops: TSetOfYamlTokens): TJSONData;
 var
   tk : TYamlToken;
 
@@ -73,7 +131,7 @@ var
   obj    : TJSONObject;
   key    : string;
   arr    : TJSONArray;
-begin
+ begin
   Result := nil;
   hasKey := false;
   obj := nil;
@@ -84,14 +142,18 @@ begin
     if sc.tokenIndent < indent then break;
     if tk = ytkError then break;
     if tk = ytkEof then break;
+    if (ExtraStops <> []) and (tk in ExtraStops) then break;
 
     if tk = ytkSequence then begin
       arr := TJSONArray.Create;
       if Result = nil then Result := arr;
       ParseToArray(sc, opts, arr, sc.tokenIndent);
-    end;
+    end else if tk=ytkCurlyOpen then begin;
+      obj := TJSONObject.Create;
+      if Result = nil then Result := obj;
+      ParseKeyValueBlock(sc, opts, obj);
 
-    if tk = ytkIdent then begin
+    end else if tk = ytkIdent then begin
       if not hasKey then begin
         key := sc.GetValue;
         hasKey := true;
