@@ -42,6 +42,7 @@ type
   { TYamlScanner }
 
   TYamlScanner = class(TObject)
+  protected
     function DoScanNext: TYamlToken;
   public
     newLineOfs    : Integer;
@@ -53,7 +54,9 @@ type
     tabsSpaceMod  : Integer; // tabs to space modifier
     text          : string;
     token         : TYamlToken;
-    blockCount    : integer; 
+    blockCount    : integer;
+    lineNum       : integer;
+    tokenIdx      : integer;
     constructor Create;
     procedure SetBuffer(const abuf: string);
     function ScanNext: TYamlToken;
@@ -272,6 +275,7 @@ begin
   idx := 1;
   isNewLine := true;
   newLineOfs := 1;
+  lineNum := 1;
 end;
 
 function StrToIdent(const s: string; tabsSpaceMod: integer): integer;
@@ -310,6 +314,8 @@ begin
     end;
   end;
 
+  tokenIdx := idx;
+  tokenIndent := idx - newLineOfs;
   if IsPlainFirst(buf, idx) then begin
     Result := ytkIdent;
     if blockCount = 0 then begin
@@ -327,7 +333,6 @@ begin
     text := ScanSingleQuote(buf, idx);
     Result := ytkIdent;
   end else begin
-    tokenIndent := idx - newLineOfs;
     case buf[idx] of
       '#': begin
         Result := ytkComment;
@@ -339,6 +344,7 @@ begin
         text := StrOneEoln(buf, idx);
         Result := ytkEoln;
         isNewLine := true;
+        inc(lineNum);
         Exit;
       end;
       '-': begin Result := ytkSequence; inc(idx); end;
