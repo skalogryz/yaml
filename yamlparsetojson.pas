@@ -14,7 +14,10 @@ type
 const
   DefaultOpts = [y2jMultiDocToArray];
 
+// may raise EYamlParserException
 function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
+// catches EYamlParserException and reports it as an err
+function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions; out err: string): TJSONData;
 
 implementation
 
@@ -137,6 +140,7 @@ var
   obj := nil;
   arr := nil;
   while true do begin
+    SkipCommentsEoln(sc);
     tk := sc.Token;
     // out of the parent
     if sc.tokenIndent < indent then break;
@@ -144,7 +148,9 @@ var
     if tk = ytkEof then break;
     if (ExtraStops <> []) and (tk in ExtraStops) then break;
 
-    if tk = ytkSequence then begin
+    if (tk = ytkStartOfDoc) then
+      // doing nothing about it
+    else if tk = ytkSequence then begin
       arr := TJSONArray.Create;
       if Result = nil then Result := arr;
       ParseToArray(sc, opts, arr, sc.tokenIndent);
@@ -172,12 +178,29 @@ var
   if not Assigned(Result) and hasKey then begin
     Result := TJSONString.Create(key);
   end;
+  if not Assigned(Result) then
+    Result := TJSONNull.Create;
 end;
 
 function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
 begin
   sc.ScanNext;
   Result := ParseToJsonInt(sc, opts, sc.tokenIndent);
+end;
+
+function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions; out err: string): TJSONData;
+begin
+  try
+    err := '';
+    Result := ParseToJson(sc, opts);
+  except
+    on e: EYamlParserError do begin
+      if e.lineNum>0 then
+        err :='['+IntToStr(e.lineNum)+':'+IntToStr(e.charOfs)+'] ';
+      err := err+e.message;
+      Result := nil;
+    end;
+  end;
 end;
 
 end.
