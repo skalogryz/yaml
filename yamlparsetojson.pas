@@ -31,11 +31,15 @@ end;
 function ParseToJsonData(pr: TYamlParser; const opts: TYamlToJsonOptions): TJSONData; forward;
 
 procedure ParseToJsonArr(pr: TYamlParser; const opts: TYamlToJsonOptions; dst: TJSONArray);
+var
+  j : TJSONData;
 begin
-  while (pr.ParseNext) do begin
+  repeat
     if pr.entry = yeArrayEnd then break;
-    dst.Add( ParseToJsonData(pr, opts));
-  end;
+    j := ParseToJsonData(pr, opts);
+    if j<>nil then dst.Add(j)
+  until pr.entry = yeArrayEnd;
+  pr.ParseNext;
 end;
 
 procedure ParseToJsonObj(pr: TYamlParser; const opts: TYamlToJsonOptions; dst: TJSONObject);
@@ -43,16 +47,12 @@ var
   k : TJSONData;
   v : TJSONData;
 begin
-  if pr.entry <> yeKeyMapStart then
-    Exit;
-
   repeat
     k := ParseToJsonData(pr, opts);
-    pr.ParseNext;
     v := ParseToJsonData(pr, opts);
-    pr.ParseNext;
     dst.Add(k.AsString, v);
   until pr.entry = yeKeyMapClose;
+  pr.ParseNext;
 end;
 
 function ParseToJsonData(pr: TYamlParser; const opts: TYamlToJsonOptions): TJSONData;
@@ -61,18 +61,21 @@ var
   dstArr : TJSONArray;
 begin
   Result := nil;
-  while (pr.ParseNext) do begin
+  repeat
     case pr.entry of
       yeDocStart: begin
         // todo: support multi-document yaml
+        pr.ParseNext;
       end;
       yeKeyMapStart: begin
+        pr.ParseNext;
         dstObj := TJSONObject.Create;
         ParseToJsonObj(pr, opts, dstObj);
         Result := dstObj;
         break;
       end;
       yeArrayStart: begin
+        pr.ParseNext;
         dstArr := TJSONArray.Create;
         ParseToJsonArr(pr, opts, dstArr);
         Result := dstArr;
@@ -80,18 +83,20 @@ begin
       end;
       yeScalarNull: begin
         Result := TJSONNull.Create;
+        pr.ParseNext;
         break;
       end;
       yeScalar:
       begin
         Result := JsonValueFromTag(pr.tag);
         Result.AsString := pr.scalar;
+        pr.ParseNext;
         break;
       end;
       else
         break;
     end; // of case
-  end; // of while
+  until false;
 end;
 
 function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
@@ -101,6 +106,7 @@ begin
   p := TYamlParser.Create;
   try
     p.SetScanner(sc, false);
+    p.ParseNext;
     Result := ParseToJsonData(p, opts);
   finally
     p.Free;
