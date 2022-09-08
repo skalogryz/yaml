@@ -101,10 +101,12 @@ type
     psInit,           // before start of a document
     psDetect,         // trying to figure out what value we're looking at
     psReportKey,      // we've found a scalar, that seems to be the key, but so we need to report it
+    psReportNullKey,  // we've ran into ":" character, but it seems to be w/o key
     psReportStartDoc, // need to re-report the document start
     psConsumeKeyFlow,  // the start of the map has been detected "[" consume key
     psConsumeKeyBlock,  // the start of the map has been detected "{" consume key
     psConsumeValue,   // we've reported the key, we need a value now
+    psConsumeKeyValChar, // expecting ":" character
     psEof
 
   );
@@ -137,7 +139,7 @@ type
     procedure ResetContext;
     function PopupContext: TYamlEntry;
 
-    procedure SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean; indent: integer = -1);
+    procedure SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 
     procedure ConsumeDirective(const dir: string); virtual;
   public
@@ -284,6 +286,7 @@ function TYamlParser.DoParseNext: Boolean;
 var
   done : Boolean;
   isNew : Boolean;
+  tempInd : integer;
 begin
   Result := false;
 
@@ -316,6 +319,7 @@ begin
           raise EYamlInvalidToken.Create(scanner);
       end;
 
+      //psConsumeValue:
       psDetect:
       begin
         SkipCommentsEoln(scanner);
@@ -324,12 +328,30 @@ begin
         if (ctx.isStarted) and (scanner.tokenIndent < ctx.indent) then begin
           entry := PopupContext;
           Result := true;
-        end else if scanner.token = ytkIdent then begin
-          scalar := ParseKeyScalar(scanner);
-          if scanner.token = ytkColon then begin
-            SwitchContext(false, false, isNew);
+        end else if (scanner.token = ytkColon) and (fState in [psDetect]) then begin
+          SwitchContext(false, false, isNew);
+          if isNew then begin
             entry := yeKeyMapStart;
-            fState := psReportKey;
+            fState := psReportNullKey;
+          end else begin
+            entry := yeScalarNull;
+            fState := psConsumeValue;
+          end;
+          Result := true;
+        end else if scanner.token = ytkIdent then begin
+          tempInd := scanner.tokenIndent;
+          scalar := ParseKeyScalar(scanner);
+          // we have found a "key: " combination. The previous "start map" was not reported
+          // and thus we should report it now
+          if (scanner.token = ytkColon) and (fState in [psDetect]) then begin
+            SwitchContext(false, false, isNew, tempInd);
+            if isNew then begin
+              entry := yeKeyMapStart;
+              fState := psReportKey;
+            end else begin
+              entry := yeScalar;
+              fState := psConsumeValue;
+            end;
             Result := true;
           end else begin
             entry := yeScalar;
@@ -376,7 +398,14 @@ begin
       psReportKey:
       begin
         entry := yeScalar;
-        fState := psConsumeValue;
+        fState := psConsumeKeyValChar;
+        Result := true;
+      end;
+
+      psReportNullKey:
+      begin
+        entry := yeScalarNull;
+        fState := psConsumeKeyValChar;
         Result := true;
       end;
 
@@ -398,6 +427,15 @@ begin
           raise EYamlInvalidToken.Create(scanner);
       end;
 
+      psConsumeKeyValChar:
+      begin
+        if scanner.token <> ytkColon then
+          raise EYamlInvalidToken.Create(scanner);
+        scanner.ScanNext;
+        fState := psConsumeValue;
+        done := false;
+      end;
+
       psConsumeValue:
       begin
         Result := true;
@@ -405,6 +443,7 @@ begin
         if scanner.token = ytkColon then begin
           scanner.ScanNext;
           SkipCommentsEoln(scanner);
+          done := false;
         end else if scanner.token = ytkMapKey then begin
           // we were expecting the value, but encountered MapKey.
           // that MapKey can be the value (if it's SUB consume)
@@ -481,7 +520,7 @@ begin
   t.Free;
 end;
 
-procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; var isNewContext: Boolean; indent: integer = -1);
+procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 var
   n : TParserContext;
   id : integer;
