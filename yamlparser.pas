@@ -97,19 +97,23 @@ type
   );
 
   TParseState = (
-    psError,         // an error occurred
-    psInit,           // before start of a document
-    psDetect,         // trying to figure out what value we're looking at
-    psReportKey,      // we've found a scalar, that seems to be the key, but so we need to report it
-    psReportNullKey,  // we've ran into ":" character, but it seems to be w/o key
-    psReportStartDoc, // need to re-report the document start
-    psConsumeKeyFlow,  // the start of the map has been detected "[" consume key
-    psConsumeKeyBlock,  // the start of the map has been detected "{" consume key
-    psConsumeValue,   // we've reported the key, we need a value now
+    psError,             // an error occurred
+    psInit,              // before start of a document
+    psDetect,            // trying to figure out what value we're looking at
+    psReportKey,         // we've found a scalar, that seems to be the key, but so we need to report it
+    psReportNullKey,     // we've ran into ":" character, but it seems to be w/o key
+    psReportStartDoc,    // need to re-report the document start
+    psConsumeKeyBlock,   // the start of the map has been detected "{" consume key
+    psConsumeValue,      // we've reported the key, we need a value now
     psConsumeKeyValChar, // expecting ":" character
+    psConsumeMapKeyFlow, // the start of the map has been detected "{" consume key
+    psConsumeMapValFlow, // consume value of the { } map
+    psConsumeArrElmFlow, // array element (in a flow)
     psEof
 
   );
+
+  { TParserContext }
 
   TParserContext = class(TObject)
     isStarted  : Boolean; // has been reported as started or not;
@@ -121,8 +125,11 @@ type
     isKeyFound : Boolean; // the key was found (used for map)
                           // if the key is not found, we must report "non-existing" value
                           // but the context is finished
-    isFlow     : Boolean;
+    isFlow     : Boolean; // true if, {} or [] were used to start the context
     prev       : TParserContext;
+
+    function IsFlowClose(tk: TYamlToken):Boolean;
+    function GetParserState: TParseState;
   end;
 
   { TYamlParser }
@@ -223,6 +230,37 @@ begin
     sc.ScanNext;
 end;
 
+{ TParserContext }
+
+function TParserContext.IsFlowClose(tk: TYamlToken): Boolean;
+begin
+  Result :=
+    isStarted // if not started, there's nothing to close
+    and isFlow // if it's not flow, then there's no closing symbol
+    and (
+      (not isArray and (tk = ytkCurlyClose))
+       or (isArray and (tk = ytkBracketClose))
+      );
+end;
+
+function TParserContext.GetParserState: TParseState;
+begin
+  if not isStarted then begin
+    Result := psDetect;
+  end else if isArray then begin
+    if not isFlow then Result := psDetect
+    else Result := psConsumeArrElmFlow;
+  end else begin
+    if isFlow then begin
+      if not isKeyFound
+        then Result := psConsumeMapKeyFlow
+        else Result := psConsumeMapValFlow;
+    end else begin
+      Result := psConsumeKeyBlock;
+    end;
+  end;
+end;
+
 { TYamlParser }
 
 constructor TYamlParser.Create;
@@ -287,6 +325,7 @@ var
   done : Boolean;
   isNew : Boolean;
   tempInd : integer;
+  initState : TParseState;
 begin
   Result := false;
 
@@ -296,6 +335,7 @@ begin
     if (entry = yeScalar) then scalar := '';
   end;
 
+  initState := fState;
   repeat
     done := true;
     case fState of
@@ -320,9 +360,19 @@ begin
       end;
 
       //psConsumeValue:
+      psConsumeMapValFlow,
+      psConsumeMapKeyFlow,
+      psConsumeArrElmFlow,
       psDetect:
       begin
-        SkipCommentsEoln(scanner);
+        if (fState = psDetect) then SkipCommentsEoln(scanner);
+
+        if (fState in [psConsumeMapKeyFlow,psConsumeMapValFlow]) and (scanner.token = ytkColon) then
+        begin
+          scanner.ScanNext;
+          fState := psConsumeMapValFlow;
+          done := false;
+        end;
 
         // level down
         if (ctx.isStarted) and (scanner.tokenIndent < ctx.indent) then begin
@@ -357,7 +407,7 @@ begin
             entry := yeScalar;
             Result := true;
           end;
-        end else if scanner.token = ytkSequence then begin
+        end else if scanner.token = ytkDash then begin
           SwitchContext(True, False, isNew);
           if isNew then
             entry := yeArrayStart
@@ -375,6 +425,27 @@ begin
           scanner.ScanNext;
           fState := psConsumeKeyBlock;
           Result := true;
+        end else if scanner.token = ytkCurlyOpen then begin
+          SwitchContext(false, true, isNew);
+          entry := yeKeyMapStart;
+          scanner.ScanNext;
+          fState := psConsumeMapKeyFlow;
+          Result := true;
+        end else if scanner.token = ytkBracketOpen then begin
+          SwitchContext(true, true, isNew);
+          entry := yeArrayStart;
+          scanner.ScanNext;
+          fState := psConsumeArrElmFlow;
+          Result := true;
+        end else if ctx.IsFlowClose(scanner.token) then begin
+          Result := true;
+          done := true;
+          scanner.ScanNext;
+          entry := PopupContext;
+          fState := ctx.GetParserState;
+        end else if (scanner.token = ytkComma) and (ctx.isStarted) then begin
+          scanner.ScanNext;
+          done := false;
         end else if scanner.token = ytkNodeTag then begin
           tag := scanner.text;
           scanner.ScanNext;
@@ -393,6 +464,10 @@ begin
           done := false;
         end else
           raise EYamlInvalidToken.Create(scanner);
+
+        if initState = psConsumeMapKeyFlow then begin
+          ctx.isKeyFound := true;
+        end;
       end;
 
       psReportKey:
@@ -415,7 +490,7 @@ begin
         Result := true;
       end;
 
-      psConsumeKeyBlock, psConsumeKeyFlow: begin
+      psConsumeKeyBlock: begin
         if scanner.token = ytkIdent then begin
           scalar := ParseKeyScalar(scanner);
           entry := yeScalar;
@@ -522,16 +597,20 @@ end;
 
 procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 var
-  n : TParserContext;
+  n  : TParserContext;
   id : integer;
+  flowMatch : Boolean;
 begin
   isNewContext := false;
   if indent < 0 then
     id := scanner.tokenIndent
   else
     id := indent;
+
+  flowMatch := (not ctx.isFlow) and (not isFlow) and (ctx.indent = id);
+
   isNewContext := (not ctx.isStarted)
-    or ((ctx.isStarted) and ((ctx.isArray <> isArray) or (ctx.indent <> id)));
+    or ((ctx.isStarted) and ((ctx.isArray <> isArray) or (not flowMatch)));
 
   if not (isNewContext) then Exit;
   if ctx.isStarted  then begin
