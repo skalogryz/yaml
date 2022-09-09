@@ -55,6 +55,8 @@ type
     function DoScanNext: TYamlToken;
     // returns false, if fails and sets toke
     function ScanLiteral(out txt: string): TYamlScannerError;
+    function ScanDblQuote(out txt: string): TYamlScannerError;
+    function ScanSingleQuote(out txt: string): TYamlScannerError;
   public
     newLineOfs    : Integer;
     isNewLine     : Boolean;
@@ -224,14 +226,20 @@ begin
   Result := Copy(buf, j, idx-j);
 end;
 
-function ScanDblQuote(const buf: string; var idx: integer): string;
+function TYamlScanner.ScanDblQuote(out txt: string): TYamlScannerError;
 var
   j : integer;
 begin
-  if (idx>length(buf)) or (buf[idx]<>'"') then begin
-    Result:='';
+  txt:='';
+  if (idx>length(buf)) then begin
+    Result := errUnexpectedEof;
     Exit;
   end;
+  if (buf[idx]<>'"') then begin
+    Result := errInvalidChar;
+    Exit;
+  end;
+  Result := errNoError;
   j:=idx;
   inc(idx);
   while (idx<=length(buf)) do begin
@@ -249,17 +257,23 @@ begin
       break;
     end;
   end;
-  Result := Copy(buf, j, idx-j);
+  txt := Copy(buf, j, idx-j);
 end;
 
-function ScanSingleQuote(const buf: string; var idx: integer): string;
+function TYamlScanner.ScanSingleQuote(out txt: string): TYamlScannerError;
 var
   j : integer;
 begin
-  if (idx>length(buf)) or (buf[idx]<>#39) then begin
-    Result:='';
+  txt := '';
+  if (idx>length(buf)) then begin
+    Result := errUnexpectedEof;
     Exit;
   end;
+  if (buf[idx]<>#39) then begin
+    Result := errInvalidChar;
+    Exit;
+  end;
+  Result := errNoError;
   j:=idx;
   inc(idx);
   while (idx<=length(buf)) do begin
@@ -274,7 +288,7 @@ begin
       inc(idx);
   end;
   if (idx <= length(buf)) then inc(idx);
-  Result := Copy(buf, j, idx-j);
+  txt := Copy(buf, j, idx-j);
 end;
 
 { TYamlScanner }
@@ -344,12 +358,18 @@ begin
       text := ScanPlainIdent(buf, idx, YamlIdentInBlock);
   end else if buf[idx] = '"' then begin
     identQuotes := 2;
-    text := ScanDblQuote(buf, idx);
-    Result := ytkIdent;
+    error := ScanDblQuote(text);
+    if error<>errNoError then
+      Result := ytkError
+    else
+      Result := ytkIdent;
   end else if buf[idx] = #39 then begin
     identQuotes := 1;
-    text := ScanSingleQuote(buf, idx);
-    Result := ytkIdent;
+    error := ScanSingleQuote(text);
+    if error<>errNoError then
+      Result := ytkError
+    else
+      Result := ytkIdent;
   end else begin
     case buf[idx] of
       '#': begin
@@ -447,6 +467,7 @@ begin
       Exit;
     end;
     SkipOneEoln(buf, idx);
+    inc(lineNum);
     newLineOfs := idx;
 
     j := idx;
@@ -487,8 +508,12 @@ begin
          if (txt = '') then txt := #10;
     else
       j := length(txt);
-      while (j>1) and (txt[j-1]=#10) do dec(j);
-      txt := Copy(txt,1,j);
+      if (j > 0) and (txt[length(txt)] <> #10) then begin
+        txt := txt + #10;
+      end else begin
+        while (j>1) and (txt[j-1]=#10) do dec(j);
+        txt := Copy(txt,1,j);
+      end;
     end;
   end;
 end;
