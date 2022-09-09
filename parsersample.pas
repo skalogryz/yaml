@@ -1,4 +1,4 @@
-program tojsonparsersample;
+program parsersample;
 
 {$mode objfpc}{$H+}
 
@@ -14,6 +14,14 @@ var
   res : string;
   pr  : TYamlParser;
   err : string;
+  ind : string;
+const
+  STRNOTE : array [TYamlEntry] of string = (
+    '=VAL' ,'=VAL' ,'+DOC' ,'-DOC' ,'+MAP' ,'-MAP' ,'+SEQ' ,'-SEQ' ,'+STR'
+  );
+  IndNOTE : array [TYamlEntry] of integer = (
+    0, 0, 1, -1, +1, -1, +1 ,-1,+1
+  );
 begin
   res := '';
   fs := TFileStream.Create(fn, fmOpenRead or fmShareDenyNone);
@@ -28,6 +36,7 @@ begin
     pr.SetBuffer(res);
 
     while pr.ParseNext do begin
+      write(STRNOTE[pr.entry]:8,' ');
       write(pr.entry:15);
       write(pr.ParserState:20);
       if pr.tag <>''then write(' [',pr.tag,']');

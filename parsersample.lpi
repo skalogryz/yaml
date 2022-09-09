@@ -8,7 +8,6 @@
         <MainUnitHasCreateFormStatements Value="False"/>
         <MainUnitHasTitleStatement Value="False"/>
         <MainUnitHasScaledStatement Value="False"/>
-        <UseDefaultCompilerOptions Value="True"/>
       </Flags>
       <SessionStorage Value="InProjectDir"/>
       <Title Value="parsersample"/>
@@ -29,7 +28,6 @@
       <Unit>
         <Filename Value="parsersample.pas"/>
         <IsPartOfProject Value="True"/>
-        <UnitName Value="tojsonparsersample"/>
       </Unit>
     </Units>
   </ProjectOptions>
