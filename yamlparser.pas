@@ -28,8 +28,6 @@ const
    ,ytkAnchor
    ,ytkAlias
    ,ytkNodeTag
-   ,ytkLiteral
-   ,ytkFolded
    ,ytkIdent
    ,ytkStartOfDoc
    ,ytkEndOfDoc // if we found this one, we should also report, as if the document got started
