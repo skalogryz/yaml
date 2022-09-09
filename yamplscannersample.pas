@@ -26,7 +26,7 @@ begin
       tk := sc.ScanNext;
       if tk = ytkEof then Break;
       if tk = ytkError then begin
-        writeln('error');
+        writeln('error: ', YamlErrorStr[sc.error]);
         break;
       end;
       write(sc.tokenIndent:8,YamlTokenStr[tk]:10,' ');
