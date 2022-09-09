@@ -55,9 +55,10 @@ type
     tabsSpaceMod  : Integer; // tabs to space modifier
     text          : string;
     token         : TYamlToken;
-    blockCount    : integer;
+    flowCount     : integer;
     lineNum       : integer;
     tokenIdx      : integer;
+    blockIndent   : Integer;
     constructor Create;
     procedure SetBuffer(const abuf: string);
     function ScanNext: TYamlToken;
@@ -320,7 +321,7 @@ begin
   tokenIndent := idx - newLineOfs;
   if IsPlainFirst(buf, idx) then begin
     Result := ytkIdent;
-    if blockCount = 0 then begin
+    if flowCount = 0 then begin
       if IsDocStruct(buf, idx, Result, text) then
         Exit;
       text := ScanPlainIdent(buf, idx, YamlIdentOutBlock);
@@ -353,10 +354,10 @@ begin
       '?': begin Result := ytkMapKey; inc(idx); end;
       ':': begin Result := ytkMapValue; inc(idx); end;
       ',': begin Result := ytkSeparator; inc(idx); end;
-      '[': begin Result := ytkBlockOpen; inc(idx); inc(blockCount); end;
-      ']': begin Result := ytkBlockClose; inc(idx); dec(blockCount); end;
-      '{': begin Result := ytkMapStart; inc(idx); inc(blockCount); end;
-      '}': begin Result := ytkMapClose; inc(idx); dec(blockCount); end;
+      '[': begin Result := ytkBlockOpen; inc(idx); inc(flowCount); end;
+      ']': begin Result := ytkBlockClose; inc(idx); dec(flowCount); end;
+      '{': begin Result := ytkMapStart; inc(idx); inc(flowCount); end;
+      '}': begin Result := ytkMapClose; inc(idx); dec(flowCount); end;
       '&': begin
         Result := ytkAnchor;
         inc(idx);
