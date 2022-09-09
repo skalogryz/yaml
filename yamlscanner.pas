@@ -26,18 +26,26 @@ type
    ,ytkAnchor
    ,ytkAlias
    ,ytkNodeTag
-   ,ytkLiteral
-   ,ytkFolded
-   ,ytkSQuotedStr
-   ,ytkDQuotedStr
    ,ytkDirective
    ,ytkReserved
 
    ,ytkEoln
-   ,ytkIdent
+   ,ytkScalar
    ,ytkStartOfDoc
    ,ytkEndOfDoc
   );
+
+  TYamlScannerError = (
+    errAllGood        // no error
+   ,errUnexpectedEof  // unexpected end of file
+   ,errNeedEoln       // expected end of line, but something else was found
+   ,errInvalidChar    // invalid character encountered
+   ,errInvalidIndent  // invalid (or inconsistent) indentation
+  );
+
+const
+  ytkIdent = ytkScalar;
+
 
 type
   { TYamlScanner }
@@ -45,6 +53,8 @@ type
   TYamlScanner = class(TObject)
   protected
     function DoScanNext: TYamlToken;
+    // returns false, if fails and sets toke
+    function ScanLiteral(out txt: string): Boolean;
   public
     newLineOfs    : Integer;
     isNewLine     : Boolean;
@@ -59,6 +69,7 @@ type
     lineNum       : integer;
     tokenIdx      : integer;
     blockIndent   : Integer;
+    error         : TYamlScannerError;
     constructor Create;
     procedure SetBuffer(const abuf: string);
     function ScanNext: TYamlToken;
@@ -81,16 +92,20 @@ const
    ,'&'
    ,'*'
    ,'!'
-   ,'|'
-   ,'>'
-   ,#39
-   ,'"'
    ,'%'
    ,'<res>'
    ,'<eoln>'
    ,'<ident>'
    ,'<startdoc>'
    ,'<eodoc>'
+  );
+
+  YamlErrorStr : array [TYamlScannerError] of string = (
+    'no error'
+   ,'unexpected end of file'
+   ,'expected end of line'
+   ,'invalid character encountered'
+   ,'invalid indentation'
   );
 
 const
@@ -262,7 +277,6 @@ begin
   Result := Copy(buf, j, idx-j);
 end;
 
-
 { TYamlScanner }
 
 constructor TYamlScanner.Create;
@@ -368,18 +382,112 @@ begin
         Result := ytkNodeTag;
         text := StrWhile(buf, idx, YamlTagChars);
       end;
-      '|': begin Result := ytkLiteral; inc(idx); end;
-      '>': begin Result := ytkFolded; inc(idx); end;
+      '|','>': begin
+        Result := ytkIdent;
+        if not ScanLiteral(text) then
+          Result := ytkError;
+      end;
       '%': begin
          Result := ytkDirective; inc(idx);
          text := StrTo(buf, idx, ['#']+LineBreaks);
       end;
       '@','`': begin Result := ytkReserved; inc(idx); end;
     else
+      error := errInvalidChar;
       Result := ytkError;
     end;
   end;
   SkipWhile(buf, idx, WhiteSpaceChars);
+end;
+
+function TYamlScanner.ScanLiteral(out txt: string): Boolean;
+var
+  isFolded: Boolean;
+  ind     : integer;
+  chomp   : char;
+  j       : integer;
+  ofs     : integer;
+begin
+  txt := '';
+  Result := idx <= length(buf);
+  if not Result then begin
+    error := errUnexpectedEof;
+    Exit;
+  end;
+
+  isFolded := buf[idx]='>';
+  Result := isFolded or (buf[idx]='|');
+  if not Result then begin
+    error := errNeedEoln;
+    Exit;
+  end;
+
+  inc(idx);
+  ind := -1;
+  chomp := #0;
+  // scanning header
+  if buf[idx] in ['1'..'9'] then begin
+    ind := byte(buf[idx]) - byte('0');
+    inc(idx);
+  end;
+  if buf[idx] in ['-','+'] then begin
+    chomp := buf[idx];
+    inc(idx);
+  end;
+  SkipWhile(buf, idx, WhiteSpaceChars);
+  // header scannerd.
+
+  while (idx <= length(buf)) do begin
+    if not (buf[idx] in LineBreaks) then begin
+      // expecting eoln to be here
+      error := errNeedEoln;
+      Result := false;
+      Exit;
+    end;
+    SkipOneEoln(buf, idx);
+    newLineOfs := idx;
+
+    j := idx;
+    SkipWhile(buf, idx, WhiteSpaceChars);
+    if (idx<=length(buf)) and (buf[idx] in LineBreaks) then begin
+      // we have an empty line
+      txt := txt+#10;
+      continue;
+    end;
+    ofs := idx - newLineOfs;
+
+    if (blockIndent > 0) and (ofs <= blockIndent) then begin
+      // the character begins with the block ident, that means the scalar has finished
+      // we're done here
+      Break;
+    end;
+
+    if (ind < 0) then ind := ofs;
+
+    if (ofs < ind) then begin
+      // invalid indentation
+      Result := false;
+      break;
+    end;
+    txt := txt + StrTo(buf, idx, LineBreaks);
+    if not isFolded then txt := txt + #10;
+  end;
+
+  if Result then begin
+    // todo: fold here!
+
+    case chomp of
+      '-':
+        if (txt<>'') and (txt[length(txt)]=#10) then
+          txt := TrimRight(txt);
+      '+':
+         if (txt = '') then txt := #10;
+    else
+      j := length(txt);
+      while (j>1) and (txt[j-1]=#10) do dec(j);
+      txt := Copy(txt,1,j);
+    end;
+  end;
 end;
 
 function TYamlScanner.ScanNext: TYamlToken;
