@@ -36,7 +36,7 @@ type
   );
 
   TYamlScannerError = (
-    errAllGood        // no error
+    errNoError        // no error
    ,errUnexpectedEof  // unexpected end of file
    ,errNeedEoln       // expected end of line, but something else was found
    ,errInvalidChar    // invalid character encountered
@@ -54,7 +54,7 @@ type
   protected
     function DoScanNext: TYamlToken;
     // returns false, if fails and sets toke
-    function ScanLiteral(out txt: string): Boolean;
+    function ScanLiteral(out txt: string): TYamlScannerError;
   public
     newLineOfs    : Integer;
     isNewLine     : Boolean;
@@ -68,7 +68,7 @@ type
     flowCount     : integer;
     lineNum       : integer;
     tokenIdx      : integer;
-    blockIndent   : Integer;
+    blockIndent   : Integer; // if negative, then ignored
     error         : TYamlScannerError;
     constructor Create;
     procedure SetBuffer(const abuf: string);
@@ -293,6 +293,7 @@ begin
   isNewLine := true;
   newLineOfs := 1;
   lineNum := 1;
+  blockIndent := -1;
 end;
 
 function StrToIdent(const s: string; tabsSpaceMod: integer): integer;
@@ -383,8 +384,10 @@ begin
         text := StrWhile(buf, idx, YamlTagChars);
       end;
       '|','>': begin
-        Result := ytkIdent;
-        if not ScanLiteral(text) then
+        error := ScanLiteral(text);
+        if error = errNoError then
+          Result := ytkIdent
+        else
           Result := ytkError;
       end;
       '%': begin
@@ -400,25 +403,24 @@ begin
   SkipWhile(buf, idx, WhiteSpaceChars);
 end;
 
-function TYamlScanner.ScanLiteral(out txt: string): Boolean;
+function TYamlScanner.ScanLiteral(out txt: string): TYamlScannerError;
 var
   isFolded: Boolean;
   ind     : integer;
   chomp   : char;
   j       : integer;
   ofs     : integer;
+  ts      : string;
 begin
   txt := '';
-  Result := idx <= length(buf);
-  if not Result then begin
-    error := errUnexpectedEof;
+  if (idx > length(buf)) then begin
+    Result  := errUnexpectedEof;
     Exit;
   end;
 
   isFolded := buf[idx]='>';
-  Result := isFolded or (buf[idx]='|');
-  if not Result then begin
-    error := errNeedEoln;
+  if not (isFolded or (buf[idx]='|')) then begin
+    error := errInvalidChar;
     Exit;
   end;
 
@@ -437,11 +439,11 @@ begin
   SkipWhile(buf, idx, WhiteSpaceChars);
   // header scannerd.
 
+  Result := errNoError;
   while (idx <= length(buf)) do begin
     if not (buf[idx] in LineBreaks) then begin
       // expecting eoln to be here
-      error := errNeedEoln;
-      Result := false;
+      Result := errNeedEoln;
       Exit;
     end;
     SkipOneEoln(buf, idx);
@@ -456,24 +458,25 @@ begin
     end;
     ofs := idx - newLineOfs;
 
-    if (blockIndent > 0) and (ofs <= blockIndent) then begin
+    if (blockIndent >= 0) and (ofs <= blockIndent) then begin
       // the character begins with the block ident, that means the scalar has finished
       // we're done here
       Break;
     end;
-
     if (ind < 0) then ind := ofs;
 
     if (ofs < ind) then begin
-      // invalid indentation
-      Result := false;
+      // invalid indentation ?
+      // Result := errInvalidIndent;
       break;
     end;
-    txt := txt + StrTo(buf, idx, LineBreaks);
+    ts := StrTo(buf, idx, LineBreaks);
+    if ofs > ind then txt := txt + StringOfChar(#32, ofs - ind);
+    txt := txt + ts;
     if not isFolded then txt := txt + #10;
   end;
 
-  if Result then begin
+  if Result = errNoError then begin
     // todo: fold here!
 
     case chomp of
