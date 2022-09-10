@@ -35,6 +35,13 @@ type
    ,ytkEndOfDoc
   );
 
+  // The scanner itself doesn't through any exceptions
+  // (the only time when exception might be through is generated
+  //  by the compiler. I.e. AV or Range Check)
+  // Thus the errors ar reported by returning ytkError "token"
+  // and setting the correpsonding value to "error" flag.
+  //
+  // The errors are likely to be scanned during Scalar scanning
   TYamlScannerError = (
     errNoError        // no error
    ,errUnexpectedEof  // unexpected end of file
