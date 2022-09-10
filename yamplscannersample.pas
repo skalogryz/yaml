@@ -7,7 +7,7 @@ uses
   SysUtils, Classes, yamlscanner;
 
 
-procedure ParseYaml(const fn: string);
+procedure ScanYaml(const fn: string);
 var
   fs : TfileStream;
   buf : string;
@@ -43,5 +43,5 @@ begin
     writeln('please sepcify the file name');
     exit;
   end;
-  ParseYaml(ParamStr(1));
+  ScanYaml(ParamStr(1));
 end.
