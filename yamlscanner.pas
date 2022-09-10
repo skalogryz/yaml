@@ -53,10 +53,10 @@ type
   TYamlScanner = class(TObject)
   protected
     function DoScanNext: TYamlToken;
-    // returns false, if fails and sets toke
     function ScanLiteral(out txt: string): TYamlScannerError;
     function ScanDblQuote(out txt: string): TYamlScannerError;
     function ScanSingleQuote(out txt: string): TYamlScannerError;
+    function ScanPlainScalar(out atoken: TYamlToken; out txt: string): TYamlScannerError;
   public
     newLineOfs    : Integer;
     isNewLine     : Boolean;
@@ -204,17 +204,23 @@ begin
     SkipWhile(buf, idx, WhiteSpaceChars);
 end;
 
-// it's trusted that the first character has already been verified by IsPlainFirst() function
-function ScanPlainIdent(const buf: string; var idx: integer; const AllowedChars: TCharSet): string;
+function ScanPlainIdent(const buf: string; var idx: integer; const AllowedChars: TCharSet; isContinue: Boolean): string;
 var
   j : integer;
 begin
   j:=idx;
  
-  repeat
+  if not isContinue then
+    // it's trusted that the first character has already been verified by IsPlainFirst() function
+    // and "isCOntinue" is set to false
     inc(idx);
+
+  repeat
+
     if (idx<=length(buf)) then begin
-      if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
+      if (buf[idx] in LineBreaks) then
+        Break
+      else if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
         dec(idx); // falling back! we've found the command
         break;
       end else if (buf[idx] = ':') and not (SafeChar(buf, idx+1) in YamlIdentSafe+[#0]) then
@@ -222,6 +228,7 @@ begin
       else if not (buf[idx] in AllowedChars) then
         break;
     end;
+    inc(idx);
   until idx>length(buf);
   Result := Copy(buf, j, idx-j);
 end;
@@ -326,7 +333,8 @@ end;
 
 function TYamlScanner.DoScanNext: TYamlToken;
 var
-  s : string;
+  s        : string;
+  isFirst  : Boolean;
 begin
   text := '';
   identQuotes := 0;
@@ -349,13 +357,10 @@ begin
   tokenIdx := idx;
   tokenIndent := idx - newLineOfs;
   if IsPlainFirst(buf, idx) then begin
-    Result := ytkIdent;
-    if flowCount = 0 then begin
-      if IsDocStruct(buf, idx, Result, text) then
-        Exit;
-      text := ScanPlainIdent(buf, idx, YamlIdentOutBlock);
-    end else
-      text := ScanPlainIdent(buf, idx, YamlIdentInBlock);
+    isFirst := true;
+    error := ScanPlainScalar(Result, text);
+    if error<>errNoError then
+      Result := ytkError;
   end else if buf[idx] = '"' then begin
     identQuotes := 2;
     error := ScanDblQuote(text);
@@ -369,7 +374,7 @@ begin
     if error<>errNoError then
       Result := ytkError
     else
-      Result := ytkIdent;
+    Result := ytkIdent;
   end else begin
     case buf[idx] of
       '#': begin
@@ -420,7 +425,75 @@ begin
       Result := ytkError;
     end;
   end;
+
   SkipWhile(buf, idx, WhiteSpaceChars);
+end;
+
+function TYamlScanner.ScanPlainScalar(out atoken: TYamlToken;out txt: string): TYamlScannerError;
+var
+  s  : string;
+  isFirst : Boolean;
+begin
+  atoken := ytkScalar;;
+  txt := '';
+  Result := errNoError;
+  isFirst := true;
+  while true do begin
+    if flowCount = 0 then begin
+      if IsDocStruct(buf, idx, atoken, txt) then
+        Exit;
+      s := ScanPlainIdent(buf, idx, YamlIdentOutBlock, not isFirst);
+    end else
+      s := ScanPlainIdent(buf, idx, YamlIdentInBlock, not isFirst);
+    s := TrimRight(s);
+    isFirst := false;
+
+    if txt<>'' then begin
+      if s <>'' then
+        if not (txt[length(txt)] in LineBreaks) then
+          txt := txt + ' ';
+        txt := txt + s;
+    end else
+      txt := s;
+
+    if (idx>length(buf)) then break;
+    if not (buf[idx] in LineBreaks) then break;
+    if s ='' then begin
+      if txt<>'' then
+        txt := txt + #10;
+    end;
+    SkipOneEoln(buf, idx);
+    newLineOfs := idx;
+    SkipWhile(buf, idx, WhiteSpaceChars);
+  end;
+end;
+
+procedure ScanIndNum(const buf: string; var idx: integer; var ind: integer);
+begin
+  if (idx<=length(buf)) and (buf[idx] in ['1'..'9']) then begin
+    ind := byte(buf[idx]) - byte('0');
+    inc(idx);
+  end;
+end;
+
+procedure ScanChomp(const buf: string; var idx: integer; var chomp: char);
+begin
+  if (idx<=length(buf)) and (buf[idx] in ['-','+']) then begin
+    chomp := buf[idx];
+    inc(idx);
+  end;
+end;
+
+procedure ScanLitHeader(const buf: string; var idx: integer; var ind: integer; var chomp: char);
+begin
+  if (idx > length(buf)) then Exit;
+  if buf[idx] in ['1'..'9'] then begin
+    ScanIndNum(buf, idx, ind);
+    ScanChomp(buf, idx, chomp);
+  end else begin
+    ScanChomp(buf, idx, chomp);
+    ScanIndNum(buf, idx, ind);
+  end;
 end;
 
 function TYamlScanner.ScanLiteral(out txt: string): TYamlScannerError;
@@ -448,14 +521,7 @@ begin
   ind := -1;
   chomp := #0;
   // scanning header
-  if buf[idx] in ['1'..'9'] then begin
-    ind := byte(buf[idx]) - byte('0');
-    inc(idx);
-  end;
-  if buf[idx] in ['-','+'] then begin
-    chomp := buf[idx];
-    inc(idx);
-  end;
+  ScanLitHeader(buf, idx, ind, chomp);
   SkipWhile(buf, idx, WhiteSpaceChars);
   // header scannerd.
 
@@ -493,8 +559,12 @@ begin
     end;
     ts := StrTo(buf, idx, LineBreaks);
     if ofs > ind then txt := txt + StringOfChar(#32, ofs - ind);
-    txt := txt + ts;
-    if not isFolded then txt := txt + #10;
+    if not isFolded then begin
+      txt := txt + ts + #10;
+    end else begin
+      if txt='' then txt := ts
+      else txt := txt + ' ' + ts;
+    end;
   end;
 
   if Result = errNoError then begin
