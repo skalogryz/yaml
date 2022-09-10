@@ -147,8 +147,8 @@ const
   YamlIdentFirstTest = ['?',':','-'];
   YamlIdentFirst     = ns_char - YamlIndicator + YamlIdentFirstTest;
   YamlIdentSafe      = YamlIdentFirst;
-  YamlIdentInBlock   = nb_char - c_flow_indicator;
-  YamlIdentOutBlock  = nb_char;
+  YamlIdentInFlow    = nb_char - c_flow_indicator;
+  YamlIdentOutFlow   = nb_char;
 
   YamlURI    = YamlAlpha + YamlDecDig + ['%','#'
                 ,';' ,'/' ,'?' ,':' ,'@' ,'&' ,'='
@@ -204,38 +204,10 @@ begin
     SkipWhile(buf, idx, WhiteSpaceChars);
 end;
 
-function ScanPlainIdent(const buf: string; var idx: integer; const AllowedChars: TCharSet; isContinue: Boolean): string;
-var
-  j : integer;
-begin
-  j:=idx;
- 
-  if not isContinue then
-    // it's trusted that the first character has already been verified by IsPlainFirst() function
-    // and "isCOntinue" is set to false
-    inc(idx);
-
-  repeat
-
-    if (idx<=length(buf)) then begin
-      if (buf[idx] in LineBreaks) then
-        Break
-      else if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
-        dec(idx); // falling back! we've found the command
-        break;
-      end else if (buf[idx] = ':') and not (SafeChar(buf, idx+1) in YamlIdentSafe+[#0]) then
-        break
-      else if not (buf[idx] in AllowedChars) then
-        break;
-    end;
-    inc(idx);
-  until idx>length(buf);
-  Result := Copy(buf, j, idx-j);
-end;
-
 function TYamlScanner.ScanDblQuote(out txt: string): TYamlScannerError;
 var
   j : integer;
+  s : string;
 begin
   txt:='';
   if (idx>length(buf)) then begin
@@ -250,7 +222,7 @@ begin
   j:=idx;
   inc(idx);
   while (idx<=length(buf)) do begin
-    SkipTo(buf, idx, ['"','\']);
+    SkipTo(buf, idx, ['"','\']+LineBreaks);
     if (idx > length(buf)) then break;
     if (buf[idx] = '\') then begin
       inc(idx);
@@ -262,9 +234,24 @@ begin
     end else if (buf[idx] = '"') then begin
       inc(idx);
       break;
+    end else if (buf[idx] in LineBreaks) then begin
+      s := TrimLeft(Copy(buf, j, idx-j));
+      SkipOneEoln(buf, idx);
+      newLineOfs:=idx;
+      inc(lineNum);
+      if s ='' then txt := txt+#10
+      else begin
+        if txt = '' then txt := s
+        else txt := txt + ' ' +s;
+      end;
+      SkipWhile(buf, idx, WhiteSpaceChars);
+      j:=idx;
     end;
   end;
-  txt := Copy(buf, j, idx-j);
+
+  s := Copy(buf, j, idx-j);
+  if txt = '' then txt := s
+  else txt := txt + ' ' +s;
 end;
 
 function TYamlScanner.ScanSingleQuote(out txt: string): TYamlScannerError;
@@ -429,43 +416,71 @@ begin
   SkipWhile(buf, idx, WhiteSpaceChars);
 end;
 
-function TYamlScanner.ScanPlainScalar(out atoken: TYamlToken;out txt: string): TYamlScannerError;
+function TYamlScanner.ScanPlainScalar(out atoken: TYamlToken; out txt: string): TYamlScannerError;
 var
-  s  : string;
+  s       : string;
   isFirst : Boolean;
+  j       : integer;
+  ofs     : integer;
+  AllowedChars : TCharSet;
 begin
   atoken := ytkScalar;;
   txt := '';
   Result := errNoError;
   isFirst := true;
-  while true do begin
-    if flowCount = 0 then begin
-      if IsDocStruct(buf, idx, atoken, txt) then
-        Exit;
-      s := ScanPlainIdent(buf, idx, YamlIdentOutBlock, not isFirst);
-    end else
-      s := ScanPlainIdent(buf, idx, YamlIdentInBlock, not isFirst);
-    s := TrimRight(s);
-    isFirst := false;
 
-    if txt<>'' then begin
-      if s <>'' then
-        if not (txt[length(txt)] in LineBreaks) then
-          txt := txt + ' ';
-        txt := txt + s;
-    end else
-      txt := s;
+  if flowCount > 0 then
+    AllowedChars := YamlIdentInFlow
+  else
+    AllowedChars := YamlIdentOutFlow;
 
-    if (idx>length(buf)) then break;
-    if not (buf[idx] in LineBreaks) then break;
-    if s ='' then begin
-      if txt<>'' then
-        txt := txt + #10;
+  j := idx;
+  while (idx<=length(buf)) do begin
+
+    if isFirst and IsDocStruct(buf, idx, atoken, txt) then begin
+      // this is some other token, not indent
+      Break;
     end;
-    SkipOneEoln(buf, idx);
-    newLineOfs := idx;
-    SkipWhile(buf, idx, WhiteSpaceChars);
+
+    if (buf[idx] in LineBreaks) then begin
+      s := Trim(Copy(buf, j, idx-j));
+      isFirst := false;
+      SkipOneEoln(buf, idx);
+      newLineOfs:=idx;
+      inc(lineNum);
+
+      SkipWhile(buf, idx, WhiteSpaceChars);
+      if s = '' then
+        txt := txt+#10
+      else begin
+        if txt = '' then txt := s
+        else txt := txt + ' '+s;
+      end;
+
+      if s<>'' then begin
+        ofs := idx - newLineOfs;
+        if ofs<=blockIndent then break; // we're done!
+      end;
+
+      j:=idx;
+    end;
+    if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
+      dec(idx); // falling back! we've found the command
+      break;
+    end else if (buf[idx] = ':') and not (SafeChar(buf, idx+1) in YamlIdentSafe+[#0]) then
+      break
+    else if not (buf[idx] in AllowedChars) then
+      break
+    else
+      inc(idx);
   end;
+
+  s := Trim(Copy(buf, j, idx-j));
+  if s <> '' then begin
+    if txt = '' then txt := s
+    else txt := txt + ' '+s;
+  end;
+
 end;
 
 procedure ScanIndNum(const buf: string; var idx: integer; var ind: integer);
