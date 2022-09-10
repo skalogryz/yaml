@@ -482,8 +482,12 @@ begin
 
       j:=idx;
     end;
+    
     if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
       dec(idx); // falling back! we've found the command
+      break;
+    end else if (buf[idx] = '#') and (buf[idx-1] in LineBreaks) then begin
+      // we've found  the comment... no need to fallback though
       break;
     end else if (buf[idx] = ':') and not (SafeChar(buf, idx+1) in YamlIdentSafe+[#0]) then
       break
