@@ -481,13 +481,13 @@ begin
 
       SkipWhile(buf, idx, WhiteSpaceChars);
       AddFoldedSubstr(txt, s);
+      j:=idx;
 
       if s<>'' then begin
         ofs := idx - newLineOfs;
         if ofs<=blockIndent then break; // we're done!
       end;
 
-      j:=idx;
     end;
     
     if (buf[idx] = '#') and (buf[idx-1] in WhiteSpaceChars) then begin
