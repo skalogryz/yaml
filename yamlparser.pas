@@ -53,6 +53,7 @@ type
     lineNum  : integer;
     charOfs  : integer;
     ascanner : TYamlScanner;
+    scanErr  : TYamlScannerError;
     constructor Create(const msg: string);
     constructor Create(sc: TYamlScanner; const msg: string);
   end;
@@ -72,6 +73,14 @@ type
   public
     constructor Create(sc: TYamlScanner;const msg: string); overload;
     constructor Create(sc: TYamlScanner; const unexpect: TYamlToken); overload;
+    constructor Create(sc: TYamlScanner);
+  end;
+
+
+  { EYamlScannerError }
+
+  EYamlScannerError = class(EYamlParserError)
+  public
     constructor Create(sc: TYamlScanner);
   end;
 
@@ -226,6 +235,14 @@ procedure SkipCommentsEoln(sc: TYamlScanner);
 begin
   while sc.token in [ytkComment,ytkEoln] do
     sc.ScanNext;
+end;
+
+{ EYamlScannerError }
+
+constructor EYamlScannerError.Create(sc: TYamlScanner);
+begin
+  inherited Create(sc, 'scanner error: '+YamlErrorStr[sc.error]);
+  scanErr := sc.error;
 end;
 
 { TParserContext }
@@ -575,6 +592,7 @@ end;
 function TYamlParser.PopupContext: TYamlEntry;
 var
   t : TParserContext;
+  ind : integer;
 begin
   if ctx=root then begin
     if root.isStarted then begin
@@ -591,21 +609,30 @@ begin
   else Result := yeKeyMapClose;
 
   t.Free;
+
+  t:=ctx;
+
+  // falling back the block indent
+  ind := -1;
+  while Assigned(t) and t.isFlow do
+    t:=t.prev;
+  if Assigned(t) then ind := t.indent;
+  scanner.blockIndent := ind;
 end;
 
 procedure TYamlParser.SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 var
   n  : TParserContext;
-  id : integer;
+  ind : integer;
   flowMatch : Boolean;
 begin
   isNewContext := false;
   if indent < 0 then
-    id := scanner.tokenIndent
+    ind := scanner.tokenIndent
   else
-    id := indent;
+    ind := indent;
 
-  flowMatch := (not ctx.isFlow) and (not isFlow) and (ctx.indent = id);
+  flowMatch := (not ctx.isFlow) and (not isFlow) and (ctx.indent = ind);
 
   isNewContext := (not ctx.isStarted)
     or ((ctx.isStarted) and ((ctx.isArray <> isArray) or (not flowMatch)));
@@ -620,7 +647,10 @@ begin
   ctx.isStarted := true;
   ctx.isArray := isArray;
   ctx.isflow := isFlow;
-  ctx.indent := id;
+  ctx.indent := ind;
+
+  if not isFlow then
+    Scanner.blockIndent:= ind;
 end;
 
 procedure TYamlParser.ConsumeDirective(const dir: string);
