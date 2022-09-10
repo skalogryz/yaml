@@ -8,7 +8,7 @@ uses
   {$ENDIF}
   SysUtils, Classes, yamlscanner, yamlparser;
 
-procedure ToJson(const fn: string);
+procedure ParseYaml(const fn: string);
 var
   fs  : TFileStream;
   res : string;
@@ -40,7 +40,7 @@ begin
       write(pr.entry:15);
       write(pr.ParserState:20);
       if pr.tag <>''then write(' [',pr.tag,']');
-      if pr.entry = yeScalar then write(' ',pr.scalar);
+      if pr.entry = yeScalar then write(' :',pr.scalar);
       writeln;
     end;
 
@@ -61,6 +61,6 @@ begin
     writeln('please specify yaml file name');
     exit;
   end;
-  ToJson(ParamStr(1));
+  ParseYaml(ParamStr(1));
 end.
 
