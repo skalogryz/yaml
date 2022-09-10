@@ -540,6 +540,7 @@ function TYamlScanner.ScanLiteral(out txt: string): TYamlScannerError;
 var
   isFolded: Boolean;
   ind     : integer;
+  indOnlyWS : boolean; // indent is known only by empty lines
   chomp   : char;
   j       : integer;
   ofs     : integer;
@@ -558,6 +559,7 @@ begin
   end;
 
   inc(idx);
+  indOnlyWS := false;
   ind := -1;
   chomp := #0;
   // scanning header
@@ -578,19 +580,27 @@ begin
 
     j := idx;
     SkipWhile(buf, idx, WhiteSpaceChars);
+    ofs := idx - newLineOfs;
     if (idx<=length(buf)) and (buf[idx] in LineBreaks) then begin
+      if (ind < 0) or ((indOnlyWS) and (ofs>ind)) then begin
+        ind := ofs;
+        indOnlyWS := true;
+      end;
+
       // we have an empty line
       txt := txt+#10;
       continue;
     end;
-    ofs := idx - newLineOfs;
 
     if (blockIndent >= 0) and (ofs <= blockIndent) then begin
       // the character begins with the block ident, that means the scalar has finished
       // we're done here
       Break;
     end;
-    if (ind < 0) then ind := ofs;
+    if (ind < 0) then begin
+      ind := ofs;
+      indOnlyWS := false;
+    end;
 
     if (ofs < ind) then begin
       // invalid indentation ?
