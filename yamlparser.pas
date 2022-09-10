@@ -2,6 +2,11 @@ unit yamlparser;
 
 interface
 
+{$ifdef fpc}
+{$mode delphi}{$H+}
+{$define hasinline}
+{$endif}
+
 uses
   Classes, SysUtils, yamlscanner;
 
@@ -84,6 +89,9 @@ type
     constructor Create(sc: TYamlScanner);
   end;
 
+  EYamlInvalidIndentation = class(EYamlParserError)
+  end;
+
 procedure SkipToNewline(sc: TYamlScanner);
 
 function ParseKeyScalar(sc: TYamlScanner): string;
@@ -156,6 +164,7 @@ type
     procedure SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 
     procedure ConsumeDirective(const dir: string); virtual;
+    procedure CheckValidIndent;
   public
     ownScanner : Boolean;
 
@@ -388,6 +397,8 @@ begin
           fState := psConsumeMapValFlow;
           done := false;
         end;
+
+        CheckValidIndent;
 
         // level down
         if (ctx.isStarted) and (scanner.tokenIndent < ctx.indent) then begin
@@ -655,6 +666,22 @@ end;
 
 procedure TYamlParser.ConsumeDirective(const dir: string);
 begin
+
+end;
+
+procedure TYamlParser.CheckValidIndent;
+var
+  ind : integer;
+  t   : TParserContext;
+begin
+  ind := Scanner.tokenIndent;
+  if ind >= ctx.indent then Exit; // same or other is fine!
+  t := ctx.prev;
+  while Assigned(t) do begin
+    if ind > t.indent then
+      // invalid indentation
+      raise EYamlInvalidIndentation.Create(scanner, 'Invalid indentation '+IntToStr(ind));
+  end;
 
 end;
 
