@@ -204,6 +204,17 @@ begin
     SkipWhile(buf, idx, WhiteSpaceChars);
 end;
 
+procedure AddFoldedSubstr(var txt: string; const newStr: string);
+begin
+  if txt = '' then txt := newStr
+  else if newStr = '' then
+    txt := txt + #10
+  else if txt[length(txt)]=#10 then
+    txt := txt + newStr
+  else
+    txt := txt + ' ' +newStr;
+end;
+
 function TYamlScanner.ScanDblQuote(out txt: string): TYamlScannerError;
 var
   j : integer;
@@ -232,31 +243,30 @@ begin
       end else
         inc(idx);
     end else if (buf[idx] = '"') then begin
-      inc(idx);
       break;
     end else if (buf[idx] in LineBreaks) then begin
       s := TrimLeft(Copy(buf, j, idx-j));
       SkipOneEoln(buf, idx);
       newLineOfs:=idx;
       inc(lineNum);
-      if s ='' then txt := txt+#10
-      else begin
-        if txt = '' then txt := s
-        else txt := txt + ' ' +s;
-      end;
+      AddFoldedSubstr(txt, s);
       SkipWhile(buf, idx, WhiteSpaceChars);
       j:=idx;
     end;
   end;
 
-  s := Copy(buf, j, idx-j);
-  if txt = '' then txt := s
-  else txt := txt + ' ' +s;
+  if (idx<=length(buf)) then begin
+    inc(idx);
+    s := TrimLeft(Copy(buf, j, idx-j));
+    AddFoldedSubstr(txt, s);
+  end else
+    Result := errUnexpectedEof;
 end;
 
 function TYamlScanner.ScanSingleQuote(out txt: string): TYamlScannerError;
 var
   j : integer;
+  s : string;
 begin
   txt := '';
   if (idx>length(buf)) then begin
@@ -271,18 +281,31 @@ begin
   j:=idx;
   inc(idx);
   while (idx<=length(buf)) do begin
-    SkipTo(buf, idx, [#39]);
+    SkipTo(buf, idx, [#39]+LineBreaks);
     if (idx > length(buf)) then break;
     if (buf[idx] = #39) then begin
       if (idx<length(buf)) and (buf[idx+1]=#39) then 
         inc(idx,2)
       else
         break;
+    end else if (buf[idx] in LineBreaks) then begin
+      s := TrimLeft(Copy(buf, j, idx-j));
+      SkipOneEoln(buf, idx);
+      newLineOfs:=idx;
+      inc(lineNum);
+      AddFoldedSubstr(txt, s);
+      SkipWhile(buf, idx, WhiteSpaceChars);
+      j:=idx;
     end else
       inc(idx);
   end;
-  if (idx <= length(buf)) then inc(idx);
-  txt := Copy(buf, j, idx-j);
+
+  if (idx <= length(buf)) then begin
+    inc(idx);
+    s := TrimLeft(Copy(buf, j, idx-j));
+    AddFoldedSubstr(txt, s);
+  end else
+    Result := errUnexpectedEof;
 end;
 
 { TYamlScanner }
@@ -450,12 +473,7 @@ begin
       inc(lineNum);
 
       SkipWhile(buf, idx, WhiteSpaceChars);
-      if s = '' then
-        txt := txt+#10
-      else begin
-        if txt = '' then txt := s
-        else txt := txt + ' '+s;
-      end;
+      AddFoldedSubstr(txt, s);
 
       if s<>'' then begin
         ofs := idx - newLineOfs;
@@ -476,11 +494,7 @@ begin
   end;
 
   s := Trim(Copy(buf, j, idx-j));
-  if s <> '' then begin
-    if txt = '' then txt := s
-    else txt := txt + ' '+s;
-  end;
-
+  AddFoldedSubstr(txt, s);
 end;
 
 procedure ScanIndNum(const buf: string; var idx: integer; var ind: integer);
