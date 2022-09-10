@@ -8,7 +8,7 @@ interface
 {$endif}
 
 uses
-  Classes, SysUtils, yamlscanner;
+  Classes, SysUtils, yamlscanner, yamlunicode;
 
 const
   ytkComma = ytkSeparator;
@@ -59,8 +59,8 @@ type
     charOfs  : integer;
     ascanner : TYamlScanner;
     scanErr  : TYamlScannerError;
-    constructor Create(const msg: string);
-    constructor Create(sc: TYamlScanner; const msg: string);
+    constructor Create(const msg: string); overload;
+    constructor Create(sc: TYamlScanner; const msg: string); overload;
   end;
 
   { EYamlExpected }
@@ -179,7 +179,7 @@ type
     errorState : TParseState;
     constructor Create;
     destructor Destroy; override;
-    procedure SetBuffer(const buf: string);
+    procedure SetBuffer(const buf: string; removeUtf8ws: Boolean = true);
     procedure SetScanner(ascanner: TYamlScanner; aownScanner: Boolean);
 
     function ParseNext: Boolean;
@@ -301,13 +301,16 @@ begin
   inherited Destroy;
 end;
 
-procedure TYamlParser.SetBuffer(const buf: string);
+procedure TYamlParser.SetBuffer(const buf: string; removeUtf8ws: Boolean );
 begin
   if not Assigned(scanner) then begin
     fscanner := TYamlScanner.Create;
     ownScanner := true;
   end;
-  scanner.SetBuffer(buf);
+  if removeUtf8ws then
+    scanner.SetBuffer(ReplaceUtf8WhiteSpaces(buf))
+  else
+    scanner.SetBuffer(buf);
   InitParser;
 end;
 

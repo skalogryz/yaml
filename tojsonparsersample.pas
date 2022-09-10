@@ -6,7 +6,7 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  SysUtils, Classes, yamlscanner, yamlparsetojson, fpjson, jsonConf;
+  SysUtils, Classes, yamlscanner, yamlunicode, yamlparsetojson, fpjson, jsonConf;
 
 procedure ToJson(const fn: string);
 var
@@ -27,6 +27,7 @@ begin
   end;
   sc := TYamlScanner.Create;
   try
+    res := ReplaceUtf8WhiteSpaces(res);
     sc.SetBuffer(res);
 
     j := ParseToJson(sc, DefaultOpts, err);

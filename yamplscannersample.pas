@@ -4,7 +4,8 @@ program yamplscannersample;
 {$endif}
 
 uses
-  SysUtils, Classes, yamlscanner;
+  SysUtils, Classes, yamlscanner
+  ,yamlunicode;
 
 
 procedure ScanYaml(const fn: string);
@@ -19,6 +20,7 @@ begin
     if fs.Size=0 then Exit;
     SetLength(buf, fs.Size);
     fs.Read(buf[1], length(buf));
+    buf := ReplaceUtf8WhiteSpaces(buf);
 
     sc := TYamlScanner.Create;
     sc.SetBuffer(buf);
