@@ -542,7 +542,7 @@ begin
 
   isFolded := buf[idx]='>';
   if not (isFolded or (buf[idx]='|')) then begin
-    error := errInvalidChar;
+    Result := errInvalidChar;
     Exit;
   end;
 
