@@ -82,7 +82,6 @@ type
     constructor Create;
     procedure SetBuffer(const abuf: string);
     function ScanNext: TYamlToken;
-    function GetValue: string;
   end;
 
 const
@@ -167,9 +166,8 @@ const
 
 function IsPlainFirst(const buf: string; idx: integeR): Boolean; {$ifdef hasline}inline;{$endif}
 
-function GetTextToValue(const text: string): string;
-function SQuoteToValue(const text: string): string;
-function DQuoteToValue(const text: string): string;
+function SQuoteUnescape(const text: string): string;
+function DQuoteUnescape(const text: string): string;
 
 implementation
 
@@ -266,6 +264,7 @@ begin
     inc(idx);
     s := TrimLeft(Copy(buf, j, idx-j));
     AddFoldedSubstr(txt, s);
+    txt := DQuoteUnescape(txt);
   end else
     Result := errUnexpectedEof;
 end;
@@ -311,6 +310,7 @@ begin
     inc(idx);
     s := TrimLeft(Copy(buf, j, idx-j));
     AddFoldedSubstr(txt, s);
+    txt := SQuoteUnescape(txt);
   end else
     Result := errUnexpectedEof;
 end;
@@ -391,7 +391,7 @@ begin
     if error<>errNoError then
       Result := ytkError
     else
-    Result := ytkIdent;
+      Result := ytkIdent;
   end else begin
     case buf[idx] of
       '#': begin
@@ -504,8 +504,10 @@ begin
       inc(idx);
   end;
 
-  s := Trim(Copy(buf, j, idx-j));
-  AddFoldedSubstr(txt, s);
+  if (j<idx) then begin
+    s := Trim(Copy(buf, j, idx-j));
+    AddFoldedSubstr(txt, s);
+  end;
 end;
 
 procedure ScanIndNum(const buf: string; var idx: integer; var ind: integer);
@@ -644,12 +646,7 @@ begin
   Result := token;
 end;
 
-function TYamlScanner.GetValue: string;
-begin
-  Result := GetTextToValue(text);
-end;
-
-function SQuoteToValue(const text: string): string;
+function SQuoteUnescape(const text: string): string;
 var
   i : integer;
   j : integer;
@@ -684,7 +681,7 @@ begin
     Result := '';
 end;
 
-function DQuoteToValue(const text: string): string;
+function DQuoteUnescape(const text: string): string;
 var
   i : integer;
   j : integer;
@@ -740,14 +737,6 @@ begin
       inc(i);
   end;
   Result := Result + Copy(text, j, length(text)-j);
-end;
-
-function GetTextToValue(const text: string): string;
-begin
-  if text = '' then Result := text
-  else if text[1]=#39 then Result := SQuoteToValue(text)
-  else if text[1]='"' then Result := DQuoteToValue(text)
-  else Result := text;
 end;
 
 end.
