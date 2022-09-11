@@ -155,6 +155,7 @@ type
     fState     : TParseState;
     hasDoc     : Boolean;
     ctx        : TParserContext;
+    dst        : TParserContext;
     root       : TParserContext;
     procedure InitParser;
     function DoParseNext: Boolean;
@@ -164,7 +165,7 @@ type
     procedure SwitchContext(isArray, isFlow: Boolean; out isNewContext: Boolean; indent: integer = -1);
 
     procedure ConsumeDirective(const dir: string); virtual;
-    procedure CheckValidIndent;
+    procedure CheckValidIndent(out dstContext: TParserContext);
   public
     ownScanner : Boolean;
 
@@ -401,7 +402,12 @@ begin
           done := false;
         end;
 
-        CheckValidIndent;
+        CheckValidIndent(dst);
+        if dst<>ctx then begin;
+          entry := PopupContext;
+          Result := true;
+          break;
+        end;
 
         // level down
         if (ctx.isStarted) and (scanner.tokenIndent < ctx.indent) then begin
@@ -672,20 +678,27 @@ begin
 
 end;
 
-procedure TYamlParser.CheckValidIndent;
+procedure TYamlParser.CheckValidIndent(out dstContext: TParserContext);
 var
   ind : integer;
   t   : TParserContext;
 begin
   ind := Scanner.tokenIndent;
+  dstContext := ctx;
   if ind >= ctx.indent then Exit; // same or other is fine!
+
   t := ctx.prev;
   while Assigned(t) do begin
     if ind > t.indent then
       // invalid indentation
       raise EYamlInvalidIndentation.Create(scanner, 'Invalid indentation '+IntToStr(ind));
+    if ind = t.indent then begin
+      dstContext := t;
+      Exit;
+    end;
+    t := t.prev;
   end;
-
+  raise EYamlInvalidIndentation.Create(scanner, 'Invalid indentation '+IntToStr(ind));
 end;
 
 procedure TYamlParser.InitParser;
