@@ -33,16 +33,21 @@ begin
   i := 1;
   ln := length(buf);
   while i<=ln do begin
-    if (buf[i]= #$e2) then begin
-      cns := 0;
-      if (i+2<=ln) and (buf[i+1]=#$90) and (buf[i+2]=#$a3) then
+    cns := 0;
+    if (buf[i]= #$e2) and (cns = 0) and (i+2<=ln) then begin
+      if (buf[i+1]=#$90) and (buf[i+2]=#$a3) then
+        cns := 3
+      else if (buf[i+1]=#$80) and (buf[i+2]=#$94) then
         cns := 3;
-      if cns>0 then begin
-        Result := Result+Copy(buf, j,i-j)+' ';
-        inc(i,cns);
-        j:=i;
-      end else
-        inc(i);
+    end else if (buf[i]=#$c2) and (cns=0) and (i+1<=ln) then begin
+      if (buf[i+1]=#$bb) then
+        cns := 2;
+    end;
+
+    if cns>0 then begin
+      Result := Result+Copy(buf, j,i-j)+' ';
+      inc(i,cns);
+      j:=i;
     end else
       inc(i);
   end;
