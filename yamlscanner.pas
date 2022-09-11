@@ -8,7 +8,7 @@ unit yamlscanner;
 interface
 
 uses
-  Classes, SysUtils, parseutils;
+  Classes, SysUtils, parseutils, yamlunicode;
 
 type
   TYamlToken = (
@@ -678,7 +678,10 @@ end;
 function CodeToStr(ch: Char; const code: string): string;
 begin
   //todo:
-  Result := '';
+  if (ch = 'x') then begin
+    Result := UTF8HexToStr(code);
+  end else
+    Result := '';
 end;
 
 function DQuoteToValue(const text: string): string;
