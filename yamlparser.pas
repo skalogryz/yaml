@@ -230,7 +230,7 @@ function ParseKeyScalar(sc: TYamlScanner): string;
 begin
   Result := '';
   if sc.token = ytkIdent then begin
-    Result := sc.GetValue;
+    Result := sc.text;
     sc.ScanNext;
   end else
     Result := '';
