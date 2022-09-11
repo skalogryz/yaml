@@ -19,11 +19,38 @@ function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions = DefaultO
 // catches EYamlParserException and reports it as an err
 function ParseToJson(sc: TYamlScanner; const opts: TYamlToJsonOptions; out err: string): TJSONData;
 
+function ParseToJson(const str: string; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
+function ParseStreamToJson(const st: TStream; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
+function ParseFileToJson(const fn: string; const opts: TYamlToJsonOptions = DefaultOpts): TJSONData;
+
 implementation
 
-function JsonValueFromTag(const tag: string): TJSONData;
+function JsonValueFromTag(const tag, value: string): TJSONData;
+var
+  d : double;
+  q : QWord;
+  i : Int64;
+  err : integer;
+
 begin
-  if tag = '' then Result := TJSONString.Create('')
+  if tag = '' then begin
+    Val(value, i, err);
+    if err = 0 then begin
+      Result := TJSONInt64Number.Create(0);
+      Exit;
+    end;
+    Val(value, q, err);
+    if err = 0 then begin
+      Result := TJSONInt64Number.Create(0);
+      Exit;
+    end;
+    Val(value, d, err);
+    if err = 0 then begin
+      Result := TJSONFloatNumber.Create(0);
+      Exit;
+    end;
+    Result := TJSONString.Create('')
+  end
   else if tag ='!!int' then Result := TJSONInt64Number.Create(0)
   else Result := TJSONString.Create('');
 end;
@@ -88,7 +115,7 @@ begin
       end;
       yeScalar:
       begin
-        Result := JsonValueFromTag(pr.tag);
+        Result := JsonValueFromTag(pr.tag, pr.scalar);
         Result.AsString := pr.scalar;
         pr.ParseNext;
         break;
@@ -127,6 +154,45 @@ begin
     end;
   end;
 end;
+
+function ParseToJson(const str: string; const opts: TYamlToJsonOptions): TJSONData;
+var
+  p : TYamlParser;
+begin
+  p := TYamlParser.Create;
+  try
+    p.SetBuffer(str, false);
+    p.ParseNext;
+    Result := ParseToJsonData(p, opts);
+  finally
+    p.Free;
+  end;
+end;
+
+function ParseStreamToJson(const st: TStream; const opts: TYamlToJsonOptions): TJSONData;
+var
+  buf : string;
+begin
+  Result := nil;
+  if not Assigned(st) then Exit;
+  SetLength(buf, st.Size);
+  if length(buf)=0 then Exit;
+  st.Read(buf[1], st.Size);
+  Result := ParseToJson(buf, opts);
+end;
+
+function ParseFileToJson(const fn: string; const opts: TYamlToJsonOptions): TJSONData;
+var
+  fs :TFileStream;
+begin
+  fs := TFileStream.Create(fn, fmOpenRead or fmShareDenyNone);
+  try
+    Result := ParseStreamToJson(fs, opts);
+  finally
+    fs.Free;
+  end;
+end;
+
 
 end.
 
