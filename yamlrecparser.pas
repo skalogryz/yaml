@@ -1,41 +1,13 @@
 unit yamlrecparser;
 
-{$mode ObjFPC}{$H+}
+{$ifdef fpc}{$mode delphi}{$H+}{$endif}
 
 interface
 
 uses
-  Classes, SysUtils, yamlscanner, yamlunicode, yamlparser;
+  Classes, SysUtils, yamlscanner, yamlparser, yamltreetypes;
 
 type
-  TYamlDataType = (
-    ydtDoc,
-    ydtMap,
-    ydtArray,
-    ydrScalar,
-    ydrNull
-  );
-
-  { TYamlData }
-
-  TYamlData = class(TObject)
-  public
-    dtype     : TYamlDataType;
-    value     : string;
-    tag       : string;
-    children  : TList;
-    names     : TList;
-    //parent    : TYamlData;
-    constructor Create(adtype: TYamlDataType; aparent: TYamlData = nil);
-    constructor CreateScalar(const txt: string);
-    constructor CreateNull;
-    destructor Destroy; override;
-    function Add(adata: TYamlData): TYamlData;
-    function AddName(aname: TYamlData): TYamlData;
-    function AddVal(adata: TYamlData): TYamlData;
-    procedure Remove(adata: TYamlData);
-  end;
-
   { TYamlRecParser }
 
   TYamlRecParser = class(TObject)
@@ -44,9 +16,12 @@ type
     curDoc : TYamlData;
     procedure DoParse(aparent: TYamlData; ind: integer);
     function ParseArrBlock: TYamlData;
-    function ParseMapBlock: TYamlData;
+    function ParseMapBlock(implKey: TYamlData): TYamlData;
+    function ParseArrFlow: TYamlData;
+    function ParseMapFlow: TYamlData;
   public
     docs : TList; // documents
+    ownDocs : Boolean;
     constructor Create;
     destructor Destroy; override;
     procedure Parse(const buf: string);
@@ -59,10 +34,7 @@ implementation
 
 procedure TYamlRecParser.DoParse(aparent: TYamlData; ind: integer);
 var
-  left  : TYamlData;
-  right : TYamlData;
   t     : TYamlData;
-  addTo : TYamlData;
   mp    : TYamlData;
   key   : TYamlData;
   c     : integer;
@@ -74,28 +46,50 @@ begin
       ytkStartOfDoc, ytkEndOfDoc:
         break;
 
+      ytkComma, ytkBracketClose, ytkCurlyClose:
+        // indicators... handled else where
+        break;
+
       ytkScalar: begin
         aparent.Add( TYamlData.CreateScalar(sc.text));
         sc.ScanNext;
       end;
 
+      ytkMapKey: begin
+        mp := ParseMapBlock(nil);
+        aparent.Add(mp);
+      end;
+
       ytkMapValue: begin
+        // the parent knows about the stuff, it should be able to parse things out
+        if (aparent.dtype = ydtMap) then
+          break;
+
         if Assigned(aparent.children) and (aparent.children.Count>0) then begin
           c := aparent.children.Count - 1;
           key := TYamlData(aparent.children[c]);
           aparent.children.Delete(c);
         end else
           key := TYamlData.CreateNull;
-        mp := TYamlData.Create(ydtMap);
-        mp.AddName(key);
-        aparent.Add(mp);
-        sc.ScanNext;
-        ParseMapValue(mp);
+        mp := ParseMapBlock(key);
+        aparent.children.Add(mp);
       end;
 
       ytkSequence: begin
         t := ParseArrBlock;
+        aparent.Add(t);
       end;
+
+      ytkBracketOpen: begin
+        t := ParseArrFlow;
+        aparent.add(t);
+      end;
+
+      ytkCurlyOpen: begin
+        t := ParseMapFlow;
+        aparent.add(t);
+      end;
+
       ytkEof:
         break;
       else
@@ -113,11 +107,13 @@ begin
   sc.blockIndent := sc.tokenIndent;
   try
     while true do begin
-      sc.ScanNext;
       if sc.tokenIndent < sc.blockIndent then Break;
       if (sc.tokenIndent = sc.blockIndent) and (sc.token <> ytkSequence) then
-        raise EYamlExpected.Create(sc, ytkSequence);
-      DoParse(Result, sc.blockIndent);
+        break; // end of the block
+
+      sc.ScanNext;
+        //raise EYamlExpected.Create(sc, ytkSequence);
+      DoParse(Result, sc.blockIndent+1);
     end;
   finally
     sc.blockIndent := bi;
@@ -125,28 +121,131 @@ begin
 end;
 
 function TYamlRecParser.ParseMapBlock(implKey: TYamlData): TYamlData;
+var
+  bi     : integer;
+  hasKey : Boolean;
 begin
   Result := TYamlData.Create(ydtMap);
   bi := sc.blockIndent;
 
   if Assigned(implKey) then begin
     Result.Add(implKey);
+    hasKey := true;
+  end else
+    hasKey := false;
 
   // todo: indent needs to be delivered from the emplicit key
   sc.blockIndent := sc.tokenIndent;
 
   try
     while true do begin
-      sc.ScanNext;
       if sc.tokenIndent < sc.blockIndent then Break;
-      if (sc.tokenIndent = sc.blockIndent) and (sc.token <> ytkSequence) then
-        raise EYamlExpected.Create(sc, ytkSequence);
-      DoParse(Result, sc.blockIndent);
+      if sc.token in ytkFlowSeparate then Break;
+
+      if (sc.tokenIndent = sc.blockIndent) and
+        hasKey and not (sc.token in [ytkMapValue, ytkMapKey]) then
+        raise EYamlExpected.Create(sc, ytkMapValue);
+
+      if hasKey and (sc.token in [ytkMapKey]) then begin
+        hasKey := false;
+        Result.Add(TYamlData.Create(ydtNull));
+        sc.ScanNext;
+      end else if not hasKey and (sc.token in [ytkMapValue]) then begin
+        hasKey := true;
+        Result.Add(TYamlData.Create(ydtNull));
+        sc.ScanNext;
+      end else begin
+        hasKey := not hasKey;
+        if sc.token in [ytkMapValue, ytkMapKey] then
+          sc.ScanNext;
+      end;
+      DoParse(Result, sc.blockIndent+1);
     end;
+
   finally
     sc.blockIndent := bi;
   end;
 
+end;
+
+function TYamlRecParser.ParseMapFlow: TYamlData;
+var
+  anyComma : boolean;
+  hasKey   : Boolean;
+  hasValue : Boolean;
+begin
+  Result := TYamlData.Create(ydtMap);
+
+  if sc.token <> ytkCurlyOpen then
+    raise EYamlExpected.Create(sc, ytkCurlyOpen, sc.token);
+
+  sc.ScanNext;
+
+  while true do begin
+    SkipCommentsEoln(sc);
+    hasKey := not (sc.token in [ytkMapVAlue, ytkCurlyClose]);
+    if hasKey then begin
+      DoParse(Result, sc.blockIndent);
+      SkipCommentsEoln(sc);
+    end;
+    if sc.token = ytkMapValue then begin
+      sc.ScanNext;
+
+      if not hasKey then begin
+        Result.Add(TYamlData.Create(ydtNull));
+      end;
+
+      hasValue := not (sc.token in [ytkCurlyClose]);
+      if hasValue then begin
+        DoParse(Result, sc.blockIndent)
+      end else begin
+        Result.Add(TYamlData.Create(ydtNull));
+      end;
+    end;
+
+    anyComma := false;
+    while sc.token = ytkComma do begin
+      anyComma := true;
+      sc.ScanNext;
+      SkipCommentsEoln(sc);
+    end;
+
+    if sc.token = ytkCurlyClose then begin
+      sc.ScanNext;
+      break;
+    end else if not anyComma then
+      raise EYamlExpected.Create(sc, ytkCurlyClose, sc.token);
+  end;
+end;
+
+function TYamlRecParser.ParseArrFlow: TYamlData;
+var
+  anyComma : boolean;
+begin
+  Result := TYamlData.Create(ydtArray);
+
+  if sc.token <> ytkBracketOpen then
+    raise EYamlExpected.Create(sc, ytkBracketOpen, sc.token);
+
+  sc.ScanNext;
+
+  while true do begin
+    DoParse(Result, sc.blockIndent);
+    SkipCommentsEoln(sc);
+
+    anyComma := false;
+    while sc.token = ytkComma do begin
+      anyComma := true;
+      sc.ScanNext;
+      SkipCommentsEoln(sc);
+    end;
+
+    if sc.token = ytkBracketClose then begin
+      sc.ScanNext;
+      break;
+    end else if not anyComma then
+      raise EYamlExpected.Create(sc, ytkBracketClose, sc.token);
+  end;
 end;
 
 constructor TYamlRecParser.Create;
@@ -156,7 +255,12 @@ begin
 end;
 
 destructor TYamlRecParser.Destroy;
+var
+  i : integer;
 begin
+  if ownDocs then
+    for i:=0 to docs.Count-1 do
+      TObject(docs[i]).Free;
   docs.Free;
   inherited Destroy;
 end;
@@ -185,75 +289,6 @@ begin
   finally
     sc.Free;
   end;
-end;
-
-{ TYamlData }
-
-constructor TYamlData.Create(adtype: TYamlDataType; aparent: TYamlData);
-begin
-  inherited Create;
-  dtype:=adtype;
-  //parent := aparent;
-  if adtype = ydtMap then
-    names := TList.Create;
-  if adtype in [ydtMap,ydtArray,ydtDoc] then
-    children := TList.Create;
-end;
-
-constructor TYamlData.CreateScalar(const txt: string);
-begin
-  Create(ydrScalar);
-  value := txt;
-end;
-
-constructor TYamlData.CreateNull;
-begin
-  Create(ydrNull);
-end;
-
-destructor TYamlData.Destroy;
-var
-  i : integer;
-begin
-  if Assigned(children) then begin
-    for i:=0 to children.Count-1 do
-      TObject(children[i]).Free;
-    children.Free;
-    children := nil;
-  end;
-  inherited Destroy;
-end;
-
-function TYamlData.Add(adata: TYamlData): TYamlData;
-begin
-  Result := adata;
-  if not ASsigned(Adata) then Exit;
-  if (dtype = ydtMap) and (names.Count = children.Count) then begin
-    AddName(adata);
-  end else
-    AddVal(adata);
-end;
-
-function TYamlData.AddName(aname: TYamlData): TYamlData;
-begin
-  if not ASsigned(names) then
-    names := TList.Create;
-  names.Add(aname);
-end;
-
-function TYamlData.AddVal(adata: TYamlData): TYamlData;
-begin
-  Result :=adata;
-  if not Assigned(adata) then Exit;
-
-  if not Assigned(children) then
-    children := TList.Create;
-  children.Add(adata);
-end;
-
-procedure TYamlData.Remove(adata: TYamlData);
-begin
-  children.Remove(adata);
 end;
 
 end.

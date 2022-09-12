@@ -30,12 +30,13 @@ const
   ytkColon = ytkMapValue;
   ytkQuestion = ytkMapKey;
   ytkDash = ytkSequence;
-  ytkBracketOpen = ytkBlockOpen;
-  ytkBracketClose = ytkBlockClose;
+  ytkBracketOpen = ytkSeqOpen;
+  ytkBracketClose = ytkSeqClose;
   ytkCurlyOpen = ytkMapStart;
   ytkCurlyClose = ytkMapClose;
 
   ytkEndOfScan = [ytkEof, ytkEndOfDoc];
+  ytkFlowSeparate = [ytkComma, ytkBracketClose, ytkCurlyClose];
 
   // valid tokens for start
   DocStarters = [
@@ -43,7 +44,7 @@ const
    ,ytkMapKey
    ,ytkMapValue
    ,ytkSeparator
-   ,ytkBlockOpen
+   ,ytkSeqOpen
    ,ytkMapStart
    ,ytkAnchor
    ,ytkAlias
@@ -84,7 +85,7 @@ type
   public
     constructor Create(sc: TYamlScanner; const msg: string); overload;
     constructor Create(sc: TYamlScanner; const want: TYamlToken); overload;
-    constructor Create(sc: TYamlScanner; const want, need: TYamlToken); overload;
+    constructor Create(sc: TYamlScanner; const want, current: TYamlToken); overload;
   end;
 
   { EYamlInvalidToken }
@@ -93,7 +94,7 @@ type
   public
     constructor Create(sc: TYamlScanner;const msg: string); overload;
     constructor Create(sc: TYamlScanner; const unexpect: TYamlToken); overload;
-    constructor Create(sc: TYamlScanner);
+    constructor Create(sc: TYamlScanner); overload;
   end;
 
 
@@ -749,12 +750,13 @@ end;
 
 constructor EYamlParserError.Create(sc: TYamlScanner; const msg: string);
 begin
-  Create(msg);
   if Assigned(sc) then begin
     ascanner := sc;
     lineNum := sc.lineNum;
     charOfs := sc.tokenIdx-sc.newLineOfs+1;
-  end;
+    Create('['+IntTostr(sc.lineNum)+':'+IntToStr(charOfs)+'] '+msg);
+  end else
+    Create(msg);
 end;
 
 { EYamlInvalidToken }
@@ -786,9 +788,9 @@ begin
   Create(sc, 'expected: ' + YamlTokenStr[want]);
 end;
 
-constructor EYamlExpected.Create(sc: TYamlScanner; const want, need: TYamlToken);
+constructor EYamlExpected.Create(sc: TYamlScanner; const want, current: TYamlToken);
 begin
-  Create(sc, 'expected: ' + YamlTokenStr[want]+', but '+YamlTokenStr[need]+' found');
+  Create(sc, 'expected: ' + YamlTokenStr[want]+', but '+YamlTokenStr[current]+' found');
 end;
 
 end.

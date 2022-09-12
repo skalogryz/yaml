@@ -3,6 +3,8 @@ unit yamlscanner;
 {$ifdef fpc}
 {$mode delphi}{$H+}
 {$define hasinline}
+{$else}
+{$d-}
 {$endif}
 
 interface
@@ -18,8 +20,8 @@ type
    ,ytkMapKey
    ,ytkMapValue
    ,ytkSeparator
-   ,ytkBlockOpen
-   ,ytkBlockClose
+   ,ytkSeqOpen
+   ,ytkSeqClose
    ,ytkMapStart
    ,ytkMapClose
    ,ytkComment
@@ -357,6 +359,7 @@ begin
   identQuotes := 0;
   if idx>length(buf) then begin
     Result := ytkEof;
+    tokenIndent := 0;
     Exit;
   end;
 
@@ -411,8 +414,8 @@ begin
       '?': begin Result := ytkMapKey; inc(idx); end;
       ':': begin Result := ytkMapValue; inc(idx); end;
       ',': begin Result := ytkSeparator; inc(idx); end;
-      '[': begin Result := ytkBlockOpen; inc(idx); inc(flowCount); end;
-      ']': begin Result := ytkBlockClose; inc(idx); dec(flowCount); end;
+      '[': begin Result := ytkSeqOpen; inc(idx); inc(flowCount); end;
+      ']': begin Result := ytkSeqClose; inc(idx); dec(flowCount); end;
       '{': begin Result := ytkMapStart; inc(idx); inc(flowCount); end;
       '}': begin Result := ytkMapClose; inc(idx); dec(flowCount); end;
       '&': begin
