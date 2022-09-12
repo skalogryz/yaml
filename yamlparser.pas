@@ -10,6 +10,21 @@ interface
 uses
   Classes, SysUtils, yamlscanner, yamlunicode;
 
+// The parser cannot be implemented easily, due to necesity support
+// complex keys:
+//
+// [
+//  [ a, [ [[b,c]]: d, e]]: 23
+// ]
+//
+// this should be finished as:
+// +seq
+//   +map
+//
+// however "+map" cannot be detected until ":" is found. By that time
+// a lot of other tokens are already reported
+
+
 const
   ytkComma = ytkSeparator;
   ytkColon = ytkMapValue;
@@ -393,7 +408,8 @@ begin
       psConsumeArrElmFlow,
       psDetect:
       begin
-        if (fState = psDetect) then SkipCommentsEoln(scanner);
+        //if (fState = psDetect) then
+        SkipCommentsEoln(scanner);
 
         if (fState in [psConsumeMapKeyFlow,psConsumeMapValFlow]) and (scanner.token = ytkColon) then
         begin
@@ -497,8 +513,18 @@ begin
         end else if scanner.token = ytkEof then begin
           fState := psEof;
           done := false;
-        end else
+        end else if scanner.token = ytkEndOfDoc then begin
+          Result := true;
+          if (ctx = root) and (not ctx.isStarted) then begin
+            entry := yeDocEnd;
+            scanner.ScanNext;
+            hasDoc := false;
+          end else begin
+            entry := PopupContext;
+          end;
+        end else begin
           raise EYamlInvalidToken.Create(scanner);
+        end;
 
         if initState = psConsumeMapKeyFlow then begin
           ctx.isKeyFound := true;
